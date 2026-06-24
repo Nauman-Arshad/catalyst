@@ -1,0 +1,5 @@
+name,phone,address,opening_balance,status
+Sunrise Traders,+92 300 1112233,"Saddar, Karachi",0,active
+Khan Paint House,+92 321 4445566,"Liberty Market, Lahore",12000,active
+Frontier Hardware,+92 333 7778899,"University Road, Peshawar",-3500,active
+Capital Coatings,+92 301 2223344,"F-10, Islamabad",0,inactive
