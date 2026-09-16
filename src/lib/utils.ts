@@ -68,5 +68,6 @@ export function computePartyBalance(
   ordersTotal: number,
   paymentsTotal: number,
 ): number {
-  return openingBalance - ordersTotal + paymentsTotal;
+  // Opening balance is what the party already owed us, so it counts as a debit.
+  return -openingBalance - ordersTotal + paymentsTotal;
 }

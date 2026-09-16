@@ -27,6 +27,7 @@ export function PartyForm({ party }: { party?: Party }) {
   const {
     register,
     handleSubmit,
+    watch,
     formState: { errors },
   } = useForm<PartyFormValues, unknown, PartyInput>({
     resolver: zodResolver(partySchema),
@@ -40,6 +41,8 @@ export function PartyForm({ party }: { party?: Party }) {
         }
       : { status: "active", opening_balance: 0 },
   });
+
+  const openingBalance = Number(watch("opening_balance")) || 0;
 
   function onSubmit(values: PartyInput) {
     startTransition(async () => {
@@ -89,6 +92,13 @@ export function PartyForm({ party }: { party?: Party }) {
             <Input
               type="number"
               step="0.01"
+              className={
+                openingBalance > 0
+                  ? "font-semibold text-destructive"
+                  : openingBalance < 0
+                    ? "font-semibold text-emerald-600"
+                    : undefined
+              }
               {...register("opening_balance")}
             />
             <p className="text-xs text-muted-foreground">

@@ -65,13 +65,14 @@ export default async function PartyDetailPage({
   const ordersTotal = orders.reduce((s, o) => s + Number(o.total), 0);
   const paymentsTotal = payments.reduce((s, p) => s + Number(p.amount), 0);
   const accountBalance = computePartyBalance(
-    party.opening_balance,
+    Number(party.opening_balance),
     ordersTotal,
     paymentsTotal,
   );
 
   // Build the ledger: orders are debits (negative), payments credits (positive),
-  // sorted oldest-first with a running balance starting at the opening balance.
+  // sorted oldest-first with a running balance starting at the opening balance
+  // (opening balance = amount they owed us, so it starts as a debit).
   type Raw = {
     date: string;
     sortKey: string;
@@ -115,10 +116,11 @@ export default async function PartyDetailPage({
       });
       return { items: state.items, running };
     },
-    { items: [], running: party.opening_balance },
+    { items: [], running: -Number(party.opening_balance) },
   ).items;
 
   const due = accountBalance < 0;
+  const settled = accountBalance === 0;
 
   return (
     <div className="space-y-6">
@@ -171,11 +173,11 @@ export default async function PartyDetailPage({
               Account balance
             </p>
             <p
-              className={`mt-1 text-2xl font-semibold ${due ? "text-red-600" : "text-green-700"}`}
+              className={`mt-1 text-2xl font-semibold ${due ? "text-red-600" : settled ? "" : "text-green-700"}`}
             >
               {formatCurrency(Math.abs(accountBalance))}{" "}
               <span className="text-sm font-normal">
-                {due ? "(amount due)" : "(advance/credit)"}
+                {due ? "(amount due)" : settled ? "(settled)" : "(advance/credit)"}
               </span>
             </p>
           </div>
@@ -223,8 +225,11 @@ export default async function PartyDetailPage({
                       {e.amount < 0 ? "−" : "+"}
                       {formatCurrency(Math.abs(e.amount))}
                     </TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {formatCurrency(e.balance_after)}
+                    <TableCell
+                      className={`text-right tabular-nums ${e.balance_after < 0 ? "text-red-600" : e.balance_after > 0 ? "text-green-700" : ""}`}
+                    >
+                      {formatCurrency(Math.abs(e.balance_after))}
+                      {e.balance_after < 0 ? " due" : e.balance_after > 0 ? " credit" : ""}
                     </TableCell>
                     <TableCell className="text-right">
                       <Link
