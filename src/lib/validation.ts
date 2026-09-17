@@ -19,6 +19,11 @@ export type PartyFormValues = z.input<typeof partySchema>;
 export const productSchema = z.object({
   name: z.string().trim().min(1, "Name is required"),
   unit_price: z.coerce.number().min(0, "Must be ≥ 0"),
+  // Optional: an empty input means "not set" (null), not 0.
+  company_rate: z
+    .union([z.literal(""), z.null(), z.coerce.number().min(0, "Must be ≥ 0")])
+    .optional()
+    .transform((v) => (v === "" || v == null ? null : Number(v))),
 });
 export type ProductInput = z.infer<typeof productSchema>;
 export type ProductFormValues = z.input<typeof productSchema>;
@@ -50,3 +55,9 @@ export const paymentSchema = z.object({
 });
 export type PaymentInput = z.infer<typeof paymentSchema>;
 export type PaymentFormValues = z.input<typeof paymentSchema>;
+
+export const companyPaidSchema = z.object({
+  ledger_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Invalid date"),
+  amount_paid: z.coerce.number().min(0, "Must be ≥ 0"),
+});
+export type CompanyPaidInput = z.infer<typeof companyPaidSchema>;

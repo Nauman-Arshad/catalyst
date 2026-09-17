@@ -12,6 +12,8 @@ export interface Product {
   id: number;
   name: string;
   unit_price: number;
+  company_rate: number | null;
+  deleted_at: string | null; // archived: hidden from lists, kept for old orders
   created_at: string;
 }
 
@@ -51,12 +53,20 @@ export interface Payment {
   order?: Order | null;
 }
 
+export type CompanyLedgerDay = {
+  date: string;
+  orders: { id: number; order_number: string; party_name: string }[];
+  bill: number;
+  paid: number;
+  missing_rates: number; 
+};
+
 // For ledger history entries
 export type LedgerEntry = {
   date: string;
   type: "ORDER" | "PAYMENT";
   description: string;
-  amount: number; // negative for orders, positive for payments
+  amount: number; 
   balance_after: number;
   link_id: number;
 };
@@ -68,4 +78,5 @@ export type ActivityEntry = {
   details: string;
   date: string;
   href: string;
+  party_id: number;
 };

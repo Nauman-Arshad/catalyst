@@ -31,8 +31,8 @@ export default async function ProductsPage({
   const term = q?.trim();
 
   const products = (term
-    ? await sql`select * from products where name ilike ${"%" + term + "%"} order by name asc`
-    : await sql`select * from products order by name asc`) as unknown as Product[];
+    ? await sql`select * from products where deleted_at is null and name ilike ${"%" + term + "%"} order by name asc`
+    : await sql`select * from products where deleted_at is null order by name asc`) as unknown as Product[];
 
   return (
     <div className="space-y-6">
@@ -76,6 +76,7 @@ export default async function ProductsPage({
               <TableRow>
                 <TableHead>Product Name</TableHead>
                 <TableHead className="text-right">Unit Price</TableHead>
+                <TableHead className="text-right">Company Rate</TableHead>
                 <TableHead className="w-24 text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
@@ -93,6 +94,9 @@ export default async function ProductsPage({
                   <TableCell className="text-right tabular-nums">
                     {formatCurrency(p.unit_price)}
                   </TableCell>
+                  <TableCell className="text-right tabular-nums text-muted-foreground">
+                    {p.company_rate == null ? "—" : formatCurrency(Number(p.company_rate))}
+                  </TableCell>
                   <TableCell>
                     <div className="flex items-center justify-end gap-1">
                       <Button asChild variant="ghost" size="icon">
@@ -106,7 +110,7 @@ export default async function ProductsPage({
                       <DeleteButton
                         action={deleteProduct.bind(null, p.id)}
                         title={`Delete ${p.name}?`}
-                        description="Products used in an order can't be deleted."
+                        description="It will be removed from your product list. Past orders that include it stay unchanged."
                       />
                     </div>
                   </TableCell>

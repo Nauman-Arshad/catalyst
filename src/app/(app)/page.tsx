@@ -1,9 +1,10 @@
 import Link from "next/link";
 import { currentUser } from "@clerk/nextjs/server";
 import { subDays, format } from "date-fns";
-import { Wallet, ClipboardList, Users } from "lucide-react";
+import { Wallet, ClipboardList, Users, Eye } from "lucide-react";
 import { sql } from "@/lib/db";
 import type { ActivityEntry } from "@/types";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   Table,
@@ -49,7 +50,7 @@ export default async function DashboardPage({
 }) {
   const sp = await searchParams;
   const { from, to, active } = resolveRange(sp);
-  // Everything the dashboard needs, fetched in one parallel batch.
+  
   const [user, received, periodOrders, partyRows, recentOrders, recentPayments, recentParties] =
     await Promise.all([
       currentUser(),
@@ -68,15 +69,15 @@ export default async function DashboardPage({
             (select count(*) from parties where created_at::date between ${from} and ${to}) as new` as unknown as Promise<
         { total: number; new: number }[]
       >,
-      sql`select o.id, o.order_number, o.created_at, p.name as party_name
+      sql`select o.id, o.order_number, o.created_at, o.party_id, p.name as party_name
           from orders o join parties p on p.id = o.party_id
           order by o.created_at desc limit 20` as unknown as Promise<
-        { id: number; order_number: string; created_at: string; party_name: string }[]
+        { id: number; order_number: string; created_at: string; party_id: number; party_name: string }[]
       >,
-      sql`select pay.id, pay.amount, pay.created_at, p.name as party_name
+      sql`select pay.id, pay.amount, pay.created_at, pay.party_id, p.name as party_name
           from payments pay join parties p on p.id = pay.party_id
           order by pay.created_at desc limit 20` as unknown as Promise<
-        { id: number; amount: number; created_at: string; party_name: string }[]
+        { id: number; amount: number; created_at: string; party_id: number; party_name: string }[]
       >,
       sql`select id, name, created_at from parties order by created_at desc limit 20` as unknown as Promise<
         { id: number; name: string; created_at: string }[]
@@ -96,6 +97,7 @@ export default async function DashboardPage({
       details: `Order for ${o.party_name}`,
       date: o.created_at,
       href: `/orders/${o.id}`,
+      party_id: o.party_id,
     })),
     ...recentPayments.map((p) => ({
       type: "PAYMENT" as const,
@@ -103,6 +105,7 @@ export default async function DashboardPage({
       details: `${formatCurrency(Number(p.amount))} from ${p.party_name}`,
       date: p.created_at,
       href: `/payments/${p.id}`,
+      party_id: p.party_id,
     })),
     ...recentParties.map((p) => ({
       type: "PARTY" as const,
@@ -110,6 +113,7 @@ export default async function DashboardPage({
       details: "New party added",
       date: p.created_at,
       href: `/parties/${p.id}`,
+      party_id: p.id,
     })),
   ]
     .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0))
@@ -181,6 +185,7 @@ export default async function DashboardPage({
                 <TableHead>Record</TableHead>
                 <TableHead>Details</TableHead>
                 <TableHead>Date</TableHead>
+                <TableHead className="text-center">History</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -203,6 +208,17 @@ export default async function DashboardPage({
                   </TableCell>
                   <TableCell className="text-muted-foreground">
                     {formatDateTime(a.date)}
+                  </TableCell>
+                  <TableCell className="text-center">
+                    <Button asChild variant="ghost" size="icon" className="size-8 text-purple-600">
+                      <Link
+                        href={`/party-history?party=${a.party_id}`}
+                        aria-label="View party history"
+                        title="View party history"
+                      >
+                        <Eye />
+                      </Link>
+                    </Button>
                   </TableCell>
                 </TableRow>
               ))}
@@ -235,7 +251,7 @@ function StatCard({
     green: "from-green-50 to-white text-green-600",
   };
   return (
-    <Card className={`bg-gradient-to-br ${tones[tone]}`}>
+    <Card className={`bg-linear-to-br ${tones[tone]}`}>
       <CardContent className="p-5">
         <div className="flex items-center gap-3">
           <div className="flex size-10 items-center justify-center rounded-lg bg-white shadow-sm">

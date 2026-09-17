@@ -134,6 +134,11 @@ export default async function PartyDetailPage({
               </a>
             </Button>
             <Button asChild variant="outline">
+              <Link href={`/party-history?party=${party.id}`}>
+                <History className="size-4" /> Full History
+              </Link>
+            </Button>
+            <Button asChild variant="outline">
               <Link href={`/parties/${party.id}/edit`}>
                 <Pencil className="size-4" /> Edit
               </Link>

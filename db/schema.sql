@@ -2,7 +2,9 @@
 -- Auth is handled by Clerk; Supabase is used as a plain Postgres database.
 -- Integer (identity) primary keys. No tax — order totals are Σ(qty × unit_price).
 
--- Clean slate (drops the previous UUID-based schema).
+drop table if exists company_ledger_days cascade;
+drop table if exists company_purchases   cascade;
+drop table if exists companies           cascade;
 drop table if exists order_items cascade;
 drop table if exists payments    cascade;
 drop table if exists orders       cascade;
@@ -28,6 +30,8 @@ create table products (
   id          bigint generated always as identity primary key,
   name        text not null,
   unit_price  numeric(14,2) not null default 0,
+  company_rate numeric(14,2) check (company_rate >= 0), -- purchase rate from the company
+  deleted_at  timestamptz,                               -- set when a product used in orders is deleted (archived)
   created_at  timestamptz not null default now()
 );
 create index products_name_idx on products (lower(name));
@@ -52,12 +56,12 @@ create table order_items (
   product_id  bigint not null references products (id) on delete restrict,
   quantity    numeric(14,2) not null default 1,
   unit_price  numeric(14,2) not null default 0,
+  company_rate numeric(14,2) check (company_rate >= 0), -- snapshot of products.company_rate; null = use product's
   created_at  timestamptz not null default now()
 );
 create index order_items_order_idx on order_items (order_id);
 
 -- ── Payments ─────────────────────────────────────────────────────────────────
--- order_id is nullable; deleting an order nulls it (payment is kept on account).
 create table payments (
   id            bigint generated always as identity primary key,
   party_id      bigint not null references parties (id) on delete restrict,
@@ -69,3 +73,10 @@ create table payments (
 create index payments_party_idx on payments (party_id);
 create index payments_order_idx on payments (order_id);
 create index payments_date_idx  on payments (payment_date desc);
+
+-- ── Company ledger ───────────────────────
+create table company_ledger_days (
+  ledger_date  date primary key,
+  amount_paid  numeric(14,2) not null default 0 check (amount_paid >= 0),
+  updated_at   timestamptz not null default now()
+);
