@@ -24,7 +24,10 @@ export default async function EditOrderPage({
       OrderItem[]
     >,
     sql`select id, name, phone from parties order by name asc`,
-    sql`select id, name, unit_price from products order by name asc`,
+    sql`select id, name, unit_price from products
+        where deleted_at is null
+           or id in (select product_id from order_items where order_id = ${id})
+        order by name asc`,
   ]);
 
   return (

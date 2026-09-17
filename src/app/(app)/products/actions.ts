@@ -15,7 +15,7 @@ export async function createProduct(values: unknown): Promise<ActionResult> {
   }
   const p = parsed.data;
   try {
-    await sql`insert into products (name, unit_price) values (${p.name}, ${p.unit_price})`;
+    await sql`insert into products (name, unit_price, company_rate) values (${p.name}, ${p.unit_price}, ${p.company_rate})`;
   } catch (e) {
     return { ok: false, error: (e as Error).message };
   }
@@ -34,7 +34,7 @@ export async function updateProduct(
   }
   const p = parsed.data;
   try {
-    await sql`update products set name = ${p.name}, unit_price = ${p.unit_price} where id = ${id}`;
+    await sql`update products set name = ${p.name}, unit_price = ${p.unit_price}, company_rate = ${p.company_rate} where id = ${id} and deleted_at is null`;
   } catch (e) {
     return { ok: false, error: (e as Error).message };
   }
@@ -45,13 +45,20 @@ export async function updateProduct(
 export async function deleteProduct(id: number): Promise<ActionResult> {
   await auth.protect();
   try {
-    await sql`delete from products where id = ${id}`;
-  } catch {
-    return {
-      ok: false,
-      error: "Cannot delete this product — it is used in one or more orders.",
-    };
+    // Products used in orders are archived instead, so past orders and the
+    // company ledger keep their line items.
+    const [{ used }] = await sql`
+      select exists (select 1 from order_items where product_id = ${id}) as used
+    `;
+    if (used) {
+      await sql`update products set deleted_at = now() where id = ${id}`;
+    } else {
+      await sql`delete from products where id = ${id}`;
+    }
+  } catch (e) {
+    return { ok: false, error: (e as Error).message };
   }
   revalidatePath("/products");
+  revalidatePath("/orders/new");
   return { ok: true };
 }

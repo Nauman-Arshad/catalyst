@@ -26,9 +26,11 @@ export async function createOrder(values: unknown): Promise<ActionResult> {
         returning id
       `;
       for (const it of o.items) {
+        // Snapshot the product's company rate for the company ledger.
         await tx`
-          insert into order_items (order_id, product_id, quantity, unit_price)
-          values (${order.id}, ${it.product_id}, ${it.quantity}, ${it.unit_price})
+          insert into order_items (order_id, product_id, quantity, unit_price, company_rate)
+          values (${order.id}, ${it.product_id}, ${it.quantity}, ${it.unit_price},
+                  (select company_rate from products where id = ${it.product_id}))
         `;
       }
       // Record the advance as a payment so it flows into the party ledger and
@@ -44,6 +46,7 @@ export async function createOrder(values: unknown): Promise<ActionResult> {
     revalidatePath("/orders");
     revalidatePath("/payments");
     revalidatePath("/");
+    revalidatePath("/companies");
     return { ok: true, id };
   } catch (e) {
     return { ok: false, error: (e as Error).message };
@@ -68,17 +71,30 @@ export async function updateOrder(
         update orders set party_id = ${o.party_id}, order_date = ${o.order_date}, status = ${o.status}
         where id = ${id}
       `;
+      // Keep the company rates already snapshotted for products still on the
+      // order, so editing doesn't rewrite that day's company bill.
+      const oldRates = await tx`
+        select distinct on (product_id) product_id, company_rate
+        from order_items where order_id = ${id} and company_rate is not null
+        order by product_id, id
+      `;
+      const rateByProduct = new Map(
+        oldRates.map((r) => [Number(r.product_id), Number(r.company_rate)]),
+      );
       await tx`delete from order_items where order_id = ${id}`;
       for (const it of o.items) {
+        const kept = rateByProduct.get(it.product_id) ?? null;
         await tx`
-          insert into order_items (order_id, product_id, quantity, unit_price)
-          values (${id}, ${it.product_id}, ${it.quantity}, ${it.unit_price})
+          insert into order_items (order_id, product_id, quantity, unit_price, company_rate)
+          values (${id}, ${it.product_id}, ${it.quantity}, ${it.unit_price},
+                  coalesce(${kept}::numeric, (select company_rate from products where id = ${it.product_id})))
         `;
       }
     });
     revalidatePath("/orders");
     revalidatePath(`/orders/${id}`);
     revalidatePath("/");
+    revalidatePath("/companies");
     return { ok: true, id };
   } catch (e) {
     return { ok: false, error: (e as Error).message };
@@ -114,5 +130,6 @@ export async function deleteOrder(id: number): Promise<ActionResult> {
   revalidatePath("/orders");
   revalidatePath("/payments");
   revalidatePath("/");
+  revalidatePath("/companies");
   return { ok: true };
 }

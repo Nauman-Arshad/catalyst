@@ -7,7 +7,8 @@ export type Status =
   | "partial"
   | "paid"
   | "progress"
-  | "completed";
+  | "completed"
+  | "advance";
 
 const variants: Record<Status, string> = {
   active: "bg-green-100 text-green-800",
@@ -17,6 +18,7 @@ const variants: Record<Status, string> = {
   paid: "bg-green-100 text-green-800",
   progress: "bg-purple-100 text-purple-800",
   completed: "bg-green-100 text-green-800",
+  advance: "bg-blue-100 text-blue-800",
 };
 
 const labels: Record<Status, string> = {
@@ -27,6 +29,7 @@ const labels: Record<Status, string> = {
   paid: "Paid",
   progress: "In Progress",
   completed: "Completed",
+  advance: "Advance",
 };
 
 export function StatusBadge({

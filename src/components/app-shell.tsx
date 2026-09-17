@@ -6,8 +6,7 @@ import { Menu } from "lucide-react";
 import { UserButton } from "@clerk/nextjs";
 import { Sidebar } from "@/components/sidebar";
 
-// Persisted collapse state, read with useSyncExternalStore so it stays in sync
-// without a setState-in-effect and without a hydration mismatch.
+
 const KEY = "sidebar-collapsed";
 const EVENT = "sidebar-collapsed-change";
 
@@ -38,9 +37,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [mobileOpen, setMobileOpen] = useState(false);
 
   return (
-    <div className="flex min-h-screen bg-[#f5f3ff]">
+    <div className="flex min-h-screen bg-[#f5f3ff] print:bg-white">
       {/* Desktop sidebar (sticky, collapsible) */}
-      <div className="sticky top-0 hidden h-screen md:block">
+      <div className="sticky top-0 hidden h-screen md:block print:hidden">
         <Sidebar
           collapsed={collapsed}
           onToggle={() => setCollapsedValue(!collapsed)}
@@ -66,7 +65,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
       <div className="flex min-w-0 flex-1 flex-col">
         {/* Mobile top bar */}
-        <header className="flex h-14 items-center gap-3 border-b border-gray-200 bg-white px-4 md:hidden">
+        <header className="flex h-14 items-center gap-3 border-b border-gray-200 bg-white px-4 md:hidden print:hidden">
           <button
             type="button"
             onClick={() => setMobileOpen(true)}
@@ -83,7 +82,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
         </header>
 
-        <main className="flex-1 p-4 sm:p-6 lg:p-8">{children}</main>
+        <main className="flex-1 p-4 sm:p-6 lg:p-8 print:p-0">{children}</main>
       </div>
     </div>
   );

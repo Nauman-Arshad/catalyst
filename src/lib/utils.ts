@@ -71,3 +71,35 @@ export function computePartyBalance(
   // Opening balance is what the party already owed us, so it counts as a debit.
   return -openingBalance - ordersTotal + paymentsTotal;
 }
+
+// Split a company bill into pending / advance. Paying more than the bill
+// leaves an advance with the company, adjusted against future purchases.
+export function computeLedgerBalance(bill: number, paid: number): {
+  pending: number;
+  advance: number;
+  status: "paid" | "pending" | "advance";
+} {
+  const diff = bill - paid;
+  return {
+    pending: Math.max(diff, 0),
+    advance: Math.max(-diff, 0),
+    status: diff > 0 ? "pending" : diff < 0 ? "advance" : "paid",
+  };
+}
+
+// Totals for company ledger rows. balance = billed − paid:
+// positive = we still owe the company, negative = advance the company holds.
+export function summarizeLedger(
+  rows: { bill: number; paid: number; orders: unknown[] }[],
+) {
+  const totals = { orderCount: 0, billed: 0, paid: 0, pending: 0, advance: 0 };
+  for (const r of rows) {
+    totals.orderCount += r.orders.length;
+    const { pending, advance } = computeLedgerBalance(r.bill, r.paid);
+    totals.billed += r.bill;
+    totals.paid += r.paid;
+    totals.pending += pending;
+    totals.advance += advance;
+  }
+  return { ...totals, balance: totals.billed - totals.paid };
+}

@@ -28,8 +28,12 @@ export function ProductForm({ product }: { product?: Product }) {
   } = useForm<ProductFormValues, unknown, ProductInput>({
     resolver: zodResolver(productSchema),
     defaultValues: product
-      ? { name: product.name, unit_price: product.unit_price }
-      : { unit_price: 0 },
+      ? {
+          name: product.name,
+          unit_price: product.unit_price,
+          company_rate: product.company_rate ?? "",
+        }
+      : { unit_price: 0, company_rate: "" },
   });
 
   function onSubmit(values: ProductInput) {
@@ -69,6 +73,24 @@ export function ProductForm({ product }: { product?: Product }) {
             {errors.unit_price ? (
               <p className="text-xs text-destructive">
                 {errors.unit_price.message}
+              </p>
+            ) : null}
+          </div>
+          <div className="space-y-1.5">
+            <Label>Company rate (PKR)</Label>
+            <Input
+              type="number"
+              step="0.01"
+              min="0"
+              placeholder="Optional"
+              {...register("company_rate")}
+            />
+            <p className="text-xs text-muted-foreground">
+              The rate you buy this product at from the company.
+            </p>
+            {errors.company_rate ? (
+              <p className="text-xs text-destructive">
+                {errors.company_rate.message}
               </p>
             ) : null}
           </div>

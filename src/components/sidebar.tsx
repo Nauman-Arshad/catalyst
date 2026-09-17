@@ -9,6 +9,8 @@ import {
   Package,
   ClipboardList,
   CreditCard,
+  History,
+  Building2,
   PanelLeftClose,
   PanelLeftOpen,
   X,
@@ -21,6 +23,8 @@ const nav = [
   { href: "/products", label: "Products", icon: Package },
   { href: "/orders", label: "Orders", icon: ClipboardList },
   { href: "/payments", label: "Payments", icon: CreditCard },
+  { href: "/party-history", label: "Party History", icon: History },
+  { href: "/companies", label: "Company Ledger", icon: Building2 },
 ];
 
 function isActive(pathname: string, href: string) {

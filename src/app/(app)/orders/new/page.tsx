@@ -12,7 +12,7 @@ export const metadata = { title: "New order" };
 export default async function NewOrderPage() {
   const [parties, products] = await Promise.all([
     sql`select id, name, phone from parties where status = 'active' order by name asc`,
-    sql`select id, name, unit_price from products order by name asc`,
+    sql`select id, name, unit_price from products where deleted_at is null order by name asc`,
   ]);
 
   if (parties.length === 0 || products.length === 0) {
