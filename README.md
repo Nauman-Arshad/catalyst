@@ -59,6 +59,7 @@ npm run db:seed        # optional demo data (4 parties, 5 products, 1 order, 1 p
 npm run dev            # http://localhost:3000  → redirects to Clerk /sign-in
 npm run build && npm run start
 npm run typecheck
+npx vercel --prod
 ```
 
 ## Pages
