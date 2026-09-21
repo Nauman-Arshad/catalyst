@@ -12,7 +12,7 @@ import {
   type OrderFormValues,
 } from "@/lib/validation";
 import { createOrder, updateOrder } from "../actions";
-import { PartyCombobox, type PartyOption } from "./party-combobox";
+import { PartyCombobox, type PartyOption } from "@/components/party-combobox";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";

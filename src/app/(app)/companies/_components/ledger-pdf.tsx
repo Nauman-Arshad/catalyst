@@ -1,5 +1,5 @@
 import { Document, Page, StyleSheet, Text, View } from "@react-pdf/renderer";
-import type { CompanyLedgerDay } from "@/types";
+import type { CompanyLedgerDay, CompanyPayment } from "@/types";
 import {
   computeLedgerBalance,
   formatCurrency,
@@ -7,6 +7,8 @@ import {
   formatDateTime,
   summarizeLedger,
 } from "@/lib/utils";
+
+const PAYMENT_METHOD_LABELS = { cash: "Cash", bank: "Bank" } as const;
 
 const purple = "#7c3aed";
 const border = "#e5e7eb";
@@ -16,7 +18,10 @@ const green = "#15803d";
 const blue = "#1d4ed8";
 
 const amount = (n: number) =>
-  n.toLocaleString("en-PK", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  n.toLocaleString("en-PK", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
 
 const s = StyleSheet.create({
   page: {
@@ -115,31 +120,66 @@ const s = StyleSheet.create({
 const pills = {
   paid: { label: "PAID", color: green, backgroundColor: "#dcfce7" },
   pending: { label: "PENDING", color: "#b45309", backgroundColor: "#fef3c7" },
-  advance: { label: "ADVANCE", color: blue, backgroundColor: "#dbeafe" },
+  advance: { label: "CREDIT", color: blue, backgroundColor: "#dbeafe" },
 } as const;
 
-export function LedgerPdf({ days }: { days: CompanyLedgerDay[] }) {
-  const summary = summarizeLedger(days);
+export function LedgerPdf({
+  days,
+  payments = [],
+}: {
+  days: CompanyLedgerDay[];
+  payments?: CompanyPayment[];
+}) {
+  // Same shape as the page: money paid straight to the company gets its own
+  // row rather than changing a day's bill, and its total still counts as paid.
+  const directPaid = payments.reduce((sum, p) => sum + Number(p.amount), 0);
+  const summary = summarizeLedger(days, directPaid);
+  // Oldest first, like a statement; a payment sits under the day it shares a
+  // date with.
+  const rows = [
+    ...days.map((d) => ({ kind: "day" as const, date: d.date, day: d })),
+    ...payments.map((p) => ({
+      kind: "payment" as const,
+      date: p.payment_date,
+      payment: p,
+    })),
+  ].sort((a, b) => {
+    if (a.date !== b.date) return a.date < b.date ? -1 : 1;
+    return a.kind === b.kind ? 0 : a.kind === "day" ? -1 : 1;
+  });
   const bal = summary.balance;
   const balanceLabel =
-    bal > 0 ? "Payable to company" : bal < 0 ? "Advance with company" : "Settled";
+    bal > 0
+      ? "Payable to company"
+      : bal < 0
+        ? "Credit with company"
+        : "Settled";
   const balanceColor = bal > 0 ? red : bal < 0 ? blue : green;
   const period =
-    days.length > 0
-      ? `${formatDate(days[0].date)} - ${formatDate(days[days.length - 1].date)}`
+    rows.length > 0
+      ? `${formatDate(rows[0].date)} - ${formatDate(rows[rows.length - 1].date)}`
       : "No sales recorded";
 
   const tiles = [
-    { label: "Total orders", value: String(summary.orderCount) },
-    { label: "Total billed", value: formatCurrency(summary.billed) },
-    { label: "Total paid", value: formatCurrency(summary.paid), color: green },
+    { label: "Total Orders", value: String(summary.orderCount) },
+    { label: "Total Bill", value: formatCurrency(summary.billed) },
     {
-      label: "Total pending",
+      label: "Total Paid",
+      value: formatCurrency(summary.paid),
+      color: green,
+      sub:
+        directPaid > 0
+          ? `incl. ${formatCurrency(directPaid)} paid direct`
+          : undefined,
+    },
+    // Same figure as Company Balance, per the page.
+    {
+      label: "Total Pending",
       value: formatCurrency(summary.pending),
-      color: summary.pending > 0 ? red : undefined,
+      color: balanceColor,
     },
     {
-      label: "Company balance",
+      label: "Company Balance",
       value: formatCurrency(bal),
       color: balanceColor,
       sub: balanceLabel,
@@ -169,7 +209,9 @@ export function LedgerPdf({ days }: { days: CompanyLedgerDay[] }) {
           </View>
           <View style={{ alignItems: "flex-end" }}>
             <Text style={s.label}>{balanceLabel}</Text>
-            <Text style={[s.companyName, { color: balanceColor, fontSize: 15 }]}>
+            <Text
+              style={[s.companyName, { color: balanceColor, fontSize: 15 }]}
+            >
               {formatCurrency(bal)}
             </Text>
           </View>
@@ -187,21 +229,62 @@ export function LedgerPdf({ days }: { days: CompanyLedgerDay[] }) {
           ))}
         </View>
 
-        <Text style={s.sectionTitle}>Daily records</Text>
+        <Text style={s.sectionTitle}>Daily records (PKR)</Text>
 
         <View style={[s.row, s.headRow]}>
           <Text style={[s.cDate, s.headCell]}>DATE</Text>
           <Text style={[s.cOrders, s.headCell]}>ORDERS</Text>
-          <Text style={[s.cMoney, s.headCell]}>BILL (PKR)</Text>
+          <Text style={[s.cMoney, s.headCell]}>BILL</Text>
           <Text style={[s.cMoney, s.headCell]}>PAID</Text>
           <Text style={[s.cMoney, s.headCell]}>TO PAY</Text>
           <Text style={[s.cStatus, s.headCell]}>STATUS</Text>
         </View>
 
-        {days.length === 0 ? (
+        {rows.length === 0 ? (
           <Text style={s.empty}>No sales recorded.</Text>
         ) : (
-          days.map((d, i) => {
+          rows.map((row, i) => {
+            if (row.kind === "payment") {
+              const p = row.payment;
+              const pill = pills.paid;
+              return (
+                <View
+                  key={`payment-${p.id}`}
+                  style={i % 2 === 1 ? [s.row, s.zebra] : s.row}
+                  wrap={false}
+                >
+                  <Text style={s.cDate}>{formatDate(p.payment_date)}</Text>
+                  <View style={s.cOrders}>
+                    <Text style={[s.bold, { color: green }]}>
+                      Paid to company
+                    </Text>
+                    <Text style={s.notes}>
+                      {PAYMENT_METHOD_LABELS[p.payment_method]}
+                    </Text>
+                  </View>
+                  <Text style={[s.cMoney, { color: muted }]}>-</Text>
+                  <Text style={[s.cMoney, { color: green }]}>
+                    {amount(Number(p.amount))}
+                  </Text>
+                  <Text style={[s.cMoney, s.bold, { color: muted }]}>-</Text>
+                  <View style={[s.cStatus, { paddingHorizontal: 4 }]}>
+                    <Text
+                      style={[
+                        s.pill,
+                        {
+                          color: pill.color,
+                          backgroundColor: pill.backgroundColor,
+                        },
+                      ]}
+                    >
+                      {pill.label}
+                    </Text>
+                  </View>
+                </View>
+              );
+            }
+
+            const d = row.day;
             const b = computeLedgerBalance(d.bill, d.paid);
             const pill = pills[b.status];
             return (
@@ -229,12 +312,17 @@ export function LedgerPdf({ days }: { days: CompanyLedgerDay[] }) {
                   ) : null}
                 </View>
                 <Text style={s.cMoney}>{amount(d.bill)}</Text>
-                <Text style={[s.cMoney, { color: green }]}>{amount(d.paid)}</Text>
+                <Text style={[s.cMoney, { color: green }]}>
+                  {amount(d.paid)}
+                </Text>
                 <Text
                   style={[
                     s.cMoney,
                     s.bold,
-                    { color: d.bill > d.paid ? red : d.bill < d.paid ? blue : muted },
+                    {
+                      color:
+                        d.bill > d.paid ? red : d.bill < d.paid ? blue : muted,
+                    },
                   ]}
                 >
                   {amount(d.bill - d.paid)}
@@ -243,7 +331,10 @@ export function LedgerPdf({ days }: { days: CompanyLedgerDay[] }) {
                   <Text
                     style={[
                       s.pill,
-                      { color: pill.color, backgroundColor: pill.backgroundColor },
+                      {
+                        color: pill.color,
+                        backgroundColor: pill.backgroundColor,
+                      },
                     ]}
                   >
                     {pill.label}
@@ -254,7 +345,7 @@ export function LedgerPdf({ days }: { days: CompanyLedgerDay[] }) {
           })
         )}
 
-        {days.length > 0 ? (
+        {rows.length > 0 ? (
           <View style={[s.row, s.totalRow]} wrap={false}>
             <Text style={[s.cDate, s.bold]}>TOTAL</Text>
             <Text style={[s.cOrders, s.bold]}>
@@ -272,9 +363,10 @@ export function LedgerPdf({ days }: { days: CompanyLedgerDay[] }) {
         ) : null}
 
         <Text style={s.note}>
-          {"Bill = quantity x company rate for each day's orders. To pay = bill - paid; a " +
-            "negative amount is an advance paid to the company and will be adjusted against " +
-            "future purchases."}
+          {"Bill = quantity x company rate for each day's orders. To Pay = bill - paid; a " +
+            "negative amount is a credit with the company, adjusted against future purchases. " +
+            "Money paid straight to the company has its own row: it settles no single day's " +
+            "bill, but it counts in the Paid total and comes off Pending and the Balance."}
         </Text>
 
         <View style={s.footer} fixed>

@@ -7,6 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { DeleteButton } from "@/components/delete-button";
 import { formatCurrency, formatDate } from "@/lib/utils";
+import { PaymentMethodBadge } from "@/components/payment-method-badge";
+import type { PaymentMethod } from "@/types";
 import { deletePayment } from "../actions";
 
 export const dynamic = "force-dynamic";
@@ -28,6 +30,7 @@ type Row = {
   order_number: string | null;
   amount: number;
   payment_date: string;
+  payment_method: PaymentMethod;
 };
 
 export default async function PaymentDetailPage({
@@ -40,7 +43,7 @@ export default async function PaymentDetailPage({
 
   const rows = (await sql`
     select pay.id, pay.party_id, p.name as party_name,
-      pay.order_id, o.order_number, pay.amount, pay.payment_date
+      pay.order_id, o.order_number, pay.amount, pay.payment_date, pay.payment_method
     from payments pay
     join parties p on p.id = pay.party_id
     left join orders o on o.id = pay.order_id
@@ -122,6 +125,14 @@ export default async function PaymentDetailPage({
               Payment date
             </p>
             <p className="mt-1">{formatDate(payment.payment_date)}</p>
+          </div>
+          <div>
+            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Method
+            </p>
+            <div className="mt-1">
+              <PaymentMethodBadge method={payment.payment_method} />
+            </div>
           </div>
         </CardContent>
       </Card>

@@ -72,6 +72,27 @@ export function computePartyBalance(
   return -openingBalance - ordersTotal + paymentsTotal;
 }
 
+// How one order's received money settles its share of the company bill.
+//
+// The buyer's money goes to the company first. Anything above that order's
+// company bill is NOT kept as margin: it stays credited, so the surplus lowers
+// what is still owed to the company overall. Per order the remaining therefore
+// never drops below zero — the surplus surfaces in the day and grand totals
+// instead, as a negative "To Pay" (an advance the company holds).
+export function computeOrderCompanyCredit(
+  bill: number,
+  paid: number,
+): { credit: number; remaining: number; surplus: number } {
+  // A net refund can push an order's received money below zero; nothing is
+  // credited to the company then.
+  const credit = Math.max(paid, 0);
+  return {
+    credit,
+    remaining: Math.max(bill - credit, 0),
+    surplus: Math.max(credit - bill, 0),
+  };
+}
+
 // Split a company bill into pending / advance. Paying more than the bill
 // leaves an advance with the company, adjusted against future purchases.
 export function computeLedgerBalance(bill: number, paid: number): {
@@ -88,18 +109,31 @@ export function computeLedgerBalance(bill: number, paid: number): {
 }
 
 // Totals for company ledger rows. balance = billed − paid:
-// positive = we still owe the company, negative = advance the company holds.
+// positive = we still owe the company, negative = a credit the company holds.
+//
+// `directPaid` is money handed straight to the company (`company_payments`).
+// It settles no single day's bill, so it never touches a day row, but it is
+// real money paid and counts in Total Paid.
+//
+// Pending is deliberately the same figure as the balance rather than the sum
+// of each day's shortfall: a day paid past its bill offsets a day that is
+// short, so the two never disagree about what is outstanding.
 export function summarizeLedger(
   rows: { bill: number; paid: number; orders: unknown[] }[],
+  directPaid = 0,
 ) {
-  const totals = { orderCount: 0, billed: 0, paid: 0, pending: 0, advance: 0 };
+  const totals = { orderCount: 0, billed: 0, paid: 0 };
   for (const r of rows) {
     totals.orderCount += r.orders.length;
-    const { pending, advance } = computeLedgerBalance(r.bill, r.paid);
     totals.billed += r.bill;
     totals.paid += r.paid;
-    totals.pending += pending;
-    totals.advance += advance;
   }
-  return { ...totals, balance: totals.billed - totals.paid };
+  totals.paid += Math.max(directPaid, 0);
+  const balance = totals.billed - totals.paid;
+  return {
+    ...totals,
+    pending: balance,
+    advance: Math.max(-balance, 0),
+    balance,
+  };
 }

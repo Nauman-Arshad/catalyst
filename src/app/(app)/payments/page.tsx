@@ -14,6 +14,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { formatCurrency, formatDate } from "@/lib/utils";
+import { PaymentMethodBadge } from "@/components/payment-method-badge";
+import type { PaymentMethod } from "@/types";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Payments" };
@@ -26,12 +28,13 @@ type Row = {
   order_number: string | null;
   amount: number;
   payment_date: string;
+  payment_method: PaymentMethod;
 };
 
 export default async function PaymentsPage() {
   const payments = (await sql`
     select pay.id, pay.party_id, p.name as party_name,
-      pay.order_id, o.order_number, pay.amount, pay.payment_date
+      pay.order_id, o.order_number, pay.amount, pay.payment_date, pay.payment_method
     from payments pay
     join parties p on p.id = pay.party_id
     left join orders o on o.id = pay.order_id
@@ -73,6 +76,7 @@ export default async function PaymentsPage() {
                 <TableHead>Party</TableHead>
                 <TableHead>Order</TableHead>
                 <TableHead className="text-right">Amount</TableHead>
+                <TableHead>Method</TableHead>
                 <TableHead>Date</TableHead>
               </TableRow>
             </TableHeader>
@@ -101,6 +105,9 @@ export default async function PaymentsPage() {
                   </TableCell>
                   <TableCell className="text-right tabular-nums font-medium text-green-700">
                     {formatCurrency(Number(p.amount))}
+                  </TableCell>
+                  <TableCell>
+                    <PaymentMethodBadge method={p.payment_method} />
                   </TableCell>
                   <TableCell className="text-muted-foreground">
                     <Link

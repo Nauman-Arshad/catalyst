@@ -2,6 +2,7 @@
 -- Auth is handled by Clerk; Supabase is used as a plain Postgres database.
 -- Integer (identity) primary keys. No tax — order totals are Σ(qty × unit_price).
 
+drop table if exists company_payments    cascade;
 drop table if exists company_ledger_days cascade;
 drop table if exists company_purchases   cascade;
 drop table if exists companies           cascade;
@@ -68,6 +69,7 @@ create table payments (
   order_id      bigint references orders (id) on delete set null,
   amount        numeric(14,2) not null,
   payment_date  date not null default current_date,
+  payment_method text not null default 'cash' check (payment_method in ('cash','bank')),
   created_at    timestamptz not null default now()
 );
 create index payments_party_idx on payments (party_id);
@@ -80,3 +82,16 @@ create table company_ledger_days (
   amount_paid  numeric(14,2) not null default 0 check (amount_paid >= 0),
   updated_at   timestamptz not null default now()
 );
+
+-- Money paid directly to the supplier company. Added to the party receipts
+-- the ledger credits against a day's bill; one row per payment.
+create table company_payments (
+  id             bigint generated always as identity primary key,
+  payment_date   date not null,
+  amount         numeric(14,2) not null check (amount > 0),
+  payment_method text not null default 'cash' check (payment_method in ('cash','bank')),
+  note           text,
+  created_at     timestamptz not null default now()
+);
+create index company_payments_date_idx
+  on company_payments (payment_date desc, created_at desc);

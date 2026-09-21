@@ -29,7 +29,9 @@ const labels: Record<Status, string> = {
   paid: "Paid",
   progress: "In Progress",
   completed: "Completed",
-  advance: "Advance",
+  // Only the company ledger uses this: a day paid past its bill leaves a
+  // credit with the company.
+  advance: "Credit",
 };
 
 export function StatusBadge({
