@@ -3,6 +3,7 @@ import { sql } from "@/lib/db";
 import type { Payment } from "@/types";
 import { PageHeader } from "@/components/page-header";
 import { PaymentForm } from "../../_components/payment-form";
+import type { PartyOption } from "@/components/party-combobox";
 
 export const dynamic = "force-dynamic";
 
@@ -16,7 +17,7 @@ export default async function EditPaymentPage({
     sql`select * from payments where id = ${Number(id)}` as unknown as Promise<
       Payment[]
     >,
-    sql`select id, name from parties order by name asc`,
+    sql`select id, name, phone from parties order by name asc`,
   ]);
 
   if (!payment[0]) notFound();
@@ -25,7 +26,7 @@ export default async function EditPaymentPage({
     <div className="space-y-6">
       <PageHeader title={`Edit payment #${payment[0].id}`} />
       <PaymentForm
-        parties={parties as unknown as { id: number; name: string }[]}
+        parties={parties as unknown as PartyOption[]}
         payment={payment[0]}
       />
     </div>

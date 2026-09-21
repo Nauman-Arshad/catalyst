@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft, Pencil, History } from "lucide-react";
 import { sql } from "@/lib/db";
-import type { Party, LedgerEntry } from "@/types";
+import type { Party, LedgerEntry, PaymentMethod } from "@/types";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -16,6 +16,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { DeleteButton } from "@/components/delete-button";
+import { PaymentMethodBadge } from "@/components/payment-method-badge";
 import { formatCurrency, formatDate, computePartyBalance } from "@/lib/utils";
 import { deleteParty } from "../actions";
 
@@ -53,9 +54,15 @@ export default async function PartyDetailPage({
         total: number;
       }[]
     >,
-    sql`select id, amount, payment_date, created_at
+    sql`select id, amount, payment_date, payment_method, created_at
         from payments where party_id = ${id}` as unknown as Promise<
-      { id: number; amount: number; payment_date: string; created_at: string }[]
+      {
+        id: number;
+        amount: number;
+        payment_date: string;
+        payment_method: PaymentMethod;
+        created_at: string;
+      }[]
     >,
   ]);
 
@@ -80,6 +87,7 @@ export default async function PartyDetailPage({
     description: string;
     amount: number;
     link_id: number;
+    method?: PaymentMethod;
   };
   const raw: Raw[] = [
     ...orders.map((o) => ({
@@ -97,6 +105,7 @@ export default async function PartyDetailPage({
       description: "Payment",
       amount: Number(p.amount),
       link_id: p.id,
+      method: p.payment_method,
     })),
   ].sort((a, b) => (a.sortKey < b.sortKey ? -1 : a.sortKey > b.sortKey ? 1 : 0));
 
@@ -113,6 +122,7 @@ export default async function PartyDetailPage({
         amount: e.amount,
         balance_after: running,
         link_id: e.link_id,
+        method: e.method,
       });
       return { items: state.items, running };
     },
@@ -223,7 +233,14 @@ export default async function PartyDetailPage({
                         {e.type}
                       </span>
                     </TableCell>
-                    <TableCell className="font-medium">{e.description}</TableCell>
+                    <TableCell className="font-medium">
+                      <span className="inline-flex items-center gap-2">
+                        {e.description}
+                        {e.type === "PAYMENT" ? (
+                          <PaymentMethodBadge method={e.method} />
+                        ) : null}
+                      </span>
+                    </TableCell>
                     <TableCell
                       className={`text-right tabular-nums ${e.amount < 0 ? "text-red-600" : "text-green-700"}`}
                     >

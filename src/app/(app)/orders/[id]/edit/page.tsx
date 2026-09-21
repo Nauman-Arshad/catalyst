@@ -3,7 +3,7 @@ import { sql } from "@/lib/db";
 import type { Order, OrderItem } from "@/types";
 import { PageHeader } from "@/components/page-header";
 import { OrderForm } from "../../_components/order-form";
-import type { PartyOption } from "../../_components/party-combobox";
+import type { PartyOption } from "@/components/party-combobox";
 
 export const dynamic = "force-dynamic";
 

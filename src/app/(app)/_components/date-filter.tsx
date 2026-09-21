@@ -1,32 +1,47 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+import type { DateRangePreset } from "@/lib/date-range";
 
 export function DateFilter({
   active,
   from,
   to,
 }: {
-  active: "7d" | "30d" | "custom";
+  active: DateRangePreset;
   from: string;
   to: string;
 }) {
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [showCustom, setShowCustom] = useState(active === "custom");
   const [f, setF] = useState(from);
   const [t, setT] = useState(to);
 
+  // Stay on the current route and keep the other params (the company ledger's
+  // search, for one) instead of rewriting the whole URL.
+  function push(next: Record<string, string | null>) {
+    const params = new URLSearchParams(searchParams.toString());
+    for (const [key, value] of Object.entries(next)) {
+      if (value === null) params.delete(key);
+      else params.set(key, value);
+    }
+    const qs = params.toString();
+    router.push(qs ? `${pathname}?${qs}` : pathname);
+  }
+
   function setRange(range: "7d" | "30d") {
     setShowCustom(false);
-    router.push(`/?range=${range}`);
+    push({ range, from: null, to: null });
   }
 
   function applyCustom() {
-    if (f && t) router.push(`/?from=${f}&to=${t}`);
+    if (f && t) push({ from: f, to: t, range: null });
   }
 
   return (

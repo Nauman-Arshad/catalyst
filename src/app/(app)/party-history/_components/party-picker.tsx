@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import {
   PartyCombobox,
   type PartyOption,
-} from "../../orders/_components/party-combobox";
+} from "@/components/party-combobox";
 
 export function PartyPicker({
   parties,

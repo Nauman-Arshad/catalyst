@@ -1,13 +1,14 @@
 import Link from "next/link";
 import { History, Users } from "lucide-react";
 import { sql } from "@/lib/db";
-import type { Party } from "@/types";
+import type { Party, PaymentMethod } from "@/types";
 import { PageHeader } from "@/components/page-header";
 import { PrintButton } from "@/components/print-button";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { EmptyState } from "@/components/empty-state";
 import { StatusBadge } from "@/components/status-badge";
+import { PaymentMethodBadge } from "@/components/payment-method-badge";
 import {
   Table,
   TableBody,
@@ -23,7 +24,7 @@ import {
   computePartyBalance,
   computePaymentStatus,
 } from "@/lib/utils";
-import type { PartyOption } from "../orders/_components/party-combobox";
+import type { PartyOption } from "@/components/party-combobox";
 import { PartyPicker } from "./_components/party-picker";
 
 export const dynamic = "force-dynamic";
@@ -63,6 +64,7 @@ type PaymentRow = {
   id: number;
   amount: number;
   payment_date: string;
+  payment_method: PaymentMethod;
   order_id: number | null;
   order_number: string | null;
 };
@@ -127,7 +129,8 @@ export default async function PartyHistoryPage({
         order by o.order_date desc, o.created_at desc` as unknown as Promise<
       OrderRow[]
     >,
-    sql`select pay.id, pay.amount, pay.payment_date, pay.order_id, o.order_number
+    sql`select pay.id, pay.amount, pay.payment_date, pay.payment_method,
+               pay.order_id, o.order_number
         from payments pay
         left join orders o on o.id = pay.order_id
         where pay.party_id = ${partyId}
@@ -295,6 +298,7 @@ export default async function PartyHistoryPage({
                 <TableRow>
                   <TableHead>Date</TableHead>
                   <TableHead>Against Order</TableHead>
+                  <TableHead>Method</TableHead>
                   <TableHead className="text-right">Amount</TableHead>
                   <TableHead />
                 </TableRow>
@@ -314,6 +318,9 @@ export default async function PartyHistoryPage({
                       ) : (
                         <span className="text-muted-foreground">On account</span>
                       )}
+                    </TableCell>
+                    <TableCell>
+                      <PaymentMethodBadge method={p.payment_method} />
                     </TableCell>
                     <TableCell className="text-right tabular-nums text-green-700">
                       {formatCurrency(Number(p.amount))}

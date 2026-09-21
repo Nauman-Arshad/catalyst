@@ -52,12 +52,44 @@ export const paymentSchema = z.object({
     .transform((v) => (v === "" || v == null ? null : Number(v))),
   amount: z.coerce.number().positive("Amount must be > 0"),
   payment_date: z.string().min(1, "Date is required"),
+  payment_method: z.enum(["cash", "bank"]).default("cash"),
 });
 export type PaymentInput = z.infer<typeof paymentSchema>;
 export type PaymentFormValues = z.input<typeof paymentSchema>;
+
+// A payment made straight to the company, added to a ledger day's paid total.
+export const companyPaymentSchema = z.object({
+  payment_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Pick a date"),
+  amount: z.coerce
+    .number({ message: "Enter an amount" })
+    .refine(Number.isFinite, "Enter a valid amount")
+    .positive("Amount must be greater than 0"),
+  payment_method: z.enum(["cash", "bank"]).default("cash"),
+});
+export type CompanyPaymentInput = z.infer<typeof companyPaymentSchema>;
+export type CompanyPaymentFormValues = z.input<typeof companyPaymentSchema>;
+
+// Editing one of those rows: same fields, plus which row it is.
+export const companyPaymentEditSchema = companyPaymentSchema.extend({
+  id: z.coerce.number().int().positive("Invalid payment"),
+});
+export type CompanyPaymentEditInput = z.infer<typeof companyPaymentEditSchema>;
+export type CompanyPaymentEditFormValues = z.input<
+  typeof companyPaymentEditSchema
+>;
 
 export const companyPaidSchema = z.object({
   ledger_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Invalid date"),
   amount_paid: z.coerce.number().min(0, "Must be ≥ 0"),
 });
 export type CompanyPaidInput = z.infer<typeof companyPaidSchema>;
+
+// Setting the total a party has paid against one order, from the company
+// ledger. The difference is recorded as a payment on `payment_date`.
+export const orderPaidSchema = z.object({
+  order_id: z.coerce.number().int().positive("Invalid order"),
+  amount_paid: z.coerce.number().min(0, "Must be ≥ 0"),
+  payment_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Invalid date"),
+  payment_method: z.enum(["cash", "bank"]).default("cash"),
+});
+export type OrderPaidInput = z.infer<typeof orderPaidSchema>;

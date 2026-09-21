@@ -4,12 +4,14 @@ import { PageHeader } from "@/components/page-header";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { PaymentForm } from "../_components/payment-form";
+import type { PartyOption } from "@/components/party-combobox";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Record payment" };
 
 export default async function NewPaymentPage() {
-  const parties = await sql`select id, name from parties order by name asc`;
+  const parties =
+    await sql`select id, name, phone from parties order by name asc`;
 
   if (parties.length === 0) {
     return (
@@ -31,8 +33,11 @@ export default async function NewPaymentPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Record payment" description="Log a payment from a party." />
-      <PaymentForm parties={parties as unknown as { id: number; name: string }[]} />
+      <PageHeader
+        title="Record payment"
+        description="Log a payment from a party."
+      />
+      <PaymentForm parties={parties as unknown as PartyOption[]} />
     </div>
   );
 }

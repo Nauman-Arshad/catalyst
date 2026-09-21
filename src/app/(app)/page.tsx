@@ -1,6 +1,5 @@
 import Link from "next/link";
 import { currentUser } from "@clerk/nextjs/server";
-import { subDays, format } from "date-fns";
 import { Wallet, ClipboardList, Users, Eye } from "lucide-react";
 import { sql } from "@/lib/db";
 import type { ActivityEntry } from "@/types";
@@ -19,6 +18,7 @@ import {
   formatDateTime,
   computePaymentStatus,
 } from "@/lib/utils";
+import { resolveRange, type DateRangeParams } from "@/lib/date-range";
 import { DateFilter } from "./_components/date-filter";
 
 export const dynamic = "force-dynamic";
@@ -31,22 +31,10 @@ function greet(): string {
   return "Good evening";
 }
 
-function resolveRange(sp: { range?: string; from?: string; to?: string }): {
-  from: string;
-  to: string;
-  active: "7d" | "30d" | "custom";
-} {
-  const todayStr = format(new Date(), "yyyy-MM-dd");
-  if (sp.from && sp.to) return { from: sp.from, to: sp.to, active: "custom" };
-  if (sp.range === "30d")
-    return { from: format(subDays(new Date(), 30), "yyyy-MM-dd"), to: todayStr, active: "30d" };
-  return { from: format(subDays(new Date(), 7), "yyyy-MM-dd"), to: todayStr, active: "7d" };
-}
-
 export default async function DashboardPage({
   searchParams,
 }: {
-  searchParams: Promise<{ range?: string; from?: string; to?: string }>;
+  searchParams: Promise<DateRangeParams>;
 }) {
   const sp = await searchParams;
   const { from, to, active } = resolveRange(sp);

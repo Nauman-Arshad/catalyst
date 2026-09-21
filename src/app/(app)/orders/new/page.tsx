@@ -4,7 +4,7 @@ import { PageHeader } from "@/components/page-header";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { OrderForm } from "../_components/order-form";
-import type { PartyOption } from "../_components/party-combobox";
+import type { PartyOption } from "@/components/party-combobox";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "New order" };

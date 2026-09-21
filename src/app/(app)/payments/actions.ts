@@ -19,8 +19,9 @@ export async function createPayment(values: unknown): Promise<CreateResult> {
   const p = parsed.data;
   try {
     const [row] = await sql`
-      insert into payments (party_id, order_id, amount, payment_date)
-      values (${p.party_id}, ${p.order_id ?? null}, ${p.amount}, ${p.payment_date})
+      insert into payments (party_id, order_id, amount, payment_date, payment_method)
+      values (${p.party_id}, ${p.order_id ?? null}, ${p.amount}, ${p.payment_date},
+              ${p.payment_method})
       returning id
     `;
     revalidatePath("/payments");
@@ -46,7 +47,8 @@ export async function updatePayment(
   try {
     await sql`
       update payments set party_id = ${p.party_id}, order_id = ${p.order_id ?? null},
-        amount = ${p.amount}, payment_date = ${p.payment_date}
+        amount = ${p.amount}, payment_date = ${p.payment_date},
+        payment_method = ${p.payment_method}
       where id = ${id}
     `;
   } catch (e) {
@@ -54,6 +56,9 @@ export async function updatePayment(
   }
   revalidatePath("/payments");
   revalidatePath(`/payments/${id}`);
+  revalidatePath("/parties");
+  revalidatePath(`/parties/${p.party_id}`);
+  revalidatePath("/party-history");
   revalidatePath("/");
   return { ok: true };
 }
