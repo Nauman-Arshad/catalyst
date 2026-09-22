@@ -1,7 +1,6 @@
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
 
-/** Tailwind class merge helper (used by the UI primitives). */
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
@@ -47,6 +46,20 @@ export function computeOrderTotal(
   return items.reduce((sum, item) => sum + item.quantity * item.unit_price, 0);
 }
 
+
+export function roundMoney(amount: number): number {
+  return Math.round(amount * 100) / 100;
+}
+
+export function computeRefundDue(
+  orderTotalAfter: number,
+  paid: number,
+  returnAmount: number,
+): number {
+  const overpaid = paid - orderTotalAfter;
+  return roundMoney(Math.min(Math.max(overpaid, 0), Math.max(returnAmount, 0)));
+}
+
 // Compute payment status
 export function computePaymentStatus(
   orderTotal: number,
@@ -68,23 +81,16 @@ export function computePartyBalance(
   ordersTotal: number,
   paymentsTotal: number,
 ): number {
-  // Opening balance is what the party already owed us, so it counts as a debit.
+
   return -openingBalance - ordersTotal + paymentsTotal;
 }
 
-// How one order's received money settles its share of the company bill.
-//
-// The buyer's money goes to the company first. Anything above that order's
-// company bill is NOT kept as margin: it stays credited, so the surplus lowers
-// what is still owed to the company overall. Per order the remaining therefore
-// never drops below zero — the surplus surfaces in the day and grand totals
-// instead, as a negative "To Pay" (an advance the company holds).
+
 export function computeOrderCompanyCredit(
   bill: number,
   paid: number,
 ): { credit: number; remaining: number; surplus: number } {
-  // A net refund can push an order's received money below zero; nothing is
-  // credited to the company then.
+
   const credit = Math.max(paid, 0);
   return {
     credit,
@@ -93,8 +99,7 @@ export function computeOrderCompanyCredit(
   };
 }
 
-// Split a company bill into pending / advance. Paying more than the bill
-// leaves an advance with the company, adjusted against future purchases.
+
 export function computeLedgerBalance(bill: number, paid: number): {
   pending: number;
   advance: number;
@@ -108,16 +113,6 @@ export function computeLedgerBalance(bill: number, paid: number): {
   };
 }
 
-// Totals for company ledger rows. balance = billed − paid:
-// positive = we still owe the company, negative = a credit the company holds.
-//
-// `directPaid` is money handed straight to the company (`company_payments`).
-// It settles no single day's bill, so it never touches a day row, but it is
-// real money paid and counts in Total Paid.
-//
-// Pending is deliberately the same figure as the balance rather than the sum
-// of each day's shortfall: a day paid past its bill offsets a day that is
-// short, so the two never disagree about what is outstanding.
 export function summarizeLedger(
   rows: { bill: number; paid: number; orders: unknown[] }[],
   directPaid = 0,

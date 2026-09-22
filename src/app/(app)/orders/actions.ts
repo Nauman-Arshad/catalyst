@@ -1,9 +1,10 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { auth } from "@clerk/nextjs/server";
+import { auth, currentUser } from "@clerk/nextjs/server";
 import { sql } from "@/lib/db";
-import { orderSchema } from "@/lib/validation";
+import { orderSchema, returnSchema } from "@/lib/validation";
+import { applyReturn, type AppliedReturn } from "@/lib/returns";
 import { generateOrderNumber } from "@/lib/utils";
 
 export type ActionResult =
@@ -132,4 +133,66 @@ export async function deleteOrder(id: number): Promise<ActionResult> {
   revalidatePath("/");
   revalidatePath("/companies");
   return { ok: true };
+}
+
+// ── Product returns ──────────────────────────────────────────────────────────
+
+export type ReturnResult =
+  | { ok: true; id: number; refund: number }
+  | { ok: false; error: string };
+
+/** Who processed a return, for the history. The Clerk id is always recorded;
+ *  the readable name is a nicety, so failing to fetch it isn't fatal. */
+async function currentUserLabel(): Promise<string | null> {
+  try {
+    const user = await currentUser();
+    if (!user) return null;
+    const email =
+      user.emailAddresses.find((e) => e.id === user.primaryEmailAddressId)
+        ?.emailAddress ??
+      user.emailAddresses[0]?.emailAddress ??
+      null;
+    const name = [user.firstName, user.lastName].filter(Boolean).join(" ").trim();
+    return name || user.username || email;
+  } catch {
+    return null;
+  }
+}
+
+
+export async function createReturn(
+  orderId: number,
+  values: unknown,
+): Promise<ReturnResult> {
+  const { userId } = await auth.protect();
+  const parsed = returnSchema.safeParse(values);
+  if (!parsed.success) {
+    return {
+      ok: false,
+      error: parsed.error.issues[0]?.message ?? "Invalid input",
+    };
+  }
+
+  const actor = { userId: userId ?? null, name: await currentUserLabel() };
+
+  let result: AppliedReturn;
+  try {
+    result = await sql.begin((tx) =>
+      applyReturn(tx, orderId, parsed.data, actor),
+    );
+  } catch (e) {
+    return { ok: false, error: (e as Error).message };
+  }
+
+  revalidatePath("/orders");
+  revalidatePath(`/orders/${orderId}`);
+  revalidatePath(`/orders/${orderId}/internal-invoice`);
+  revalidatePath("/returns");
+  revalidatePath("/payments");
+  revalidatePath("/parties");
+  revalidatePath(`/parties/${result.partyId}`);
+  revalidatePath("/party-history");
+  revalidatePath("/companies");
+  revalidatePath("/");
+  return { ok: true, id: result.id, refund: result.refund };
 }
