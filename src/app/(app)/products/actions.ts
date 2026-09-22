@@ -46,9 +46,13 @@ export async function deleteProduct(id: number): Promise<ActionResult> {
   await auth.protect();
   try {
     // Products used in orders are archived instead, so past orders and the
-    // company ledger keep their line items.
+    // company ledger keep their line items. A product only ever returned —
+    // its order line long since reduced to nothing — is referenced just as
+    // restrictively by the return history, so it is archived too.
     const [{ used }] = await sql`
-      select exists (select 1 from order_items where product_id = ${id}) as used
+      select exists (select 1 from order_items where product_id = ${id})
+          or exists (select 1 from product_return_items where product_id = ${id})
+        as used
     `;
     if (used) {
       await sql`update products set deleted_at = now() where id = ${id}`;

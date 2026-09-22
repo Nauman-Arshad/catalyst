@@ -19,7 +19,7 @@ export type PartyFormValues = z.input<typeof partySchema>;
 export const productSchema = z.object({
   name: z.string().trim().min(1, "Name is required"),
   unit_price: z.coerce.number().min(0, "Must be ≥ 0"),
-  // Optional: an empty input means "not set" (null), not 0.
+  
   company_rate: z
     .union([z.literal(""), z.null(), z.coerce.number().min(0, "Must be ≥ 0")])
     .optional()
@@ -44,6 +44,60 @@ export const orderSchema = z.object({
 export type OrderInput = z.infer<typeof orderSchema>;
 export type OrderFormValues = z.input<typeof orderSchema>;
 
+
+export const returnItemSchema = z.object({
+  order_item_id: z.coerce.number().int().positive("Invalid line item"),
+  quantity: z.coerce
+    .number({ message: "Enter a quantity" })
+    .refine(Number.isFinite, "Enter a valid quantity")
+    .min(0, "Qty must be ≥ 0")
+    .default(0),
+});
+
+export const returnSchema = z
+  .object({
+    return_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Pick a date"),
+    note: optionalString,
+    
+    refund: z.boolean().default(true),
+    payment_method: z.enum(["cash", "bank"]).default("cash"),
+    items: z.array(returnItemSchema).min(1, "This order has no items to return"),
+  })
+  .refine((v) => v.items.some((i) => i.quantity > 0), {
+    message: "Enter a quantity for at least one product",
+    path: ["items"],
+  });
+export type ReturnInput = z.infer<typeof returnSchema>;
+export type ReturnFormValues = z.input<typeof returnSchema>;
+
+
+export const returnEditItemSchema = z.object({
+  return_item_id: z.coerce.number().int().positive("Invalid return line"),
+  quantity: z.coerce
+    .number({ message: "Enter a quantity" })
+    .refine(Number.isFinite, "Enter a valid quantity")
+    .min(0, "Qty must be ≥ 0")
+    .default(0),
+});
+
+export const returnEditSchema = z
+  .object({
+    id: z.coerce.number().int().positive("Invalid return"),
+    return_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Pick a date"),
+    note: optionalString,
+    refund: z.boolean().default(true),
+    payment_method: z.enum(["cash", "bank"]).default("cash"),
+    items: z
+      .array(returnEditItemSchema)
+      .min(1, "A return needs at least one product"),
+  })
+  .refine((v) => v.items.some((i) => i.quantity > 0), {
+    message: "Enter a quantity for at least one product, or delete the return",
+    path: ["items"],
+  });
+export type ReturnEditInput = z.infer<typeof returnEditSchema>;
+export type ReturnEditFormValues = z.input<typeof returnEditSchema>;
+
 export const paymentSchema = z.object({
   party_id: z.coerce.number().int().positive("Select a party"),
   order_id: z
@@ -57,7 +111,6 @@ export const paymentSchema = z.object({
 export type PaymentInput = z.infer<typeof paymentSchema>;
 export type PaymentFormValues = z.input<typeof paymentSchema>;
 
-// A payment made straight to the company, added to a ledger day's paid total.
 export const companyPaymentSchema = z.object({
   payment_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Pick a date"),
   amount: z.coerce
@@ -69,7 +122,6 @@ export const companyPaymentSchema = z.object({
 export type CompanyPaymentInput = z.infer<typeof companyPaymentSchema>;
 export type CompanyPaymentFormValues = z.input<typeof companyPaymentSchema>;
 
-// Editing one of those rows: same fields, plus which row it is.
 export const companyPaymentEditSchema = companyPaymentSchema.extend({
   id: z.coerce.number().int().positive("Invalid payment"),
 });
@@ -84,8 +136,7 @@ export const companyPaidSchema = z.object({
 });
 export type CompanyPaidInput = z.infer<typeof companyPaidSchema>;
 
-// Setting the total a party has paid against one order, from the company
-// ledger. The difference is recorded as a payment on `payment_date`.
+
 export const orderPaidSchema = z.object({
   order_id: z.coerce.number().int().positive("Invalid order"),
   amount_paid: z.coerce.number().min(0, "Must be ≥ 0"),

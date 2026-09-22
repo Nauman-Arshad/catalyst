@@ -64,11 +64,15 @@ export function OrderForm({
           order_date: order.order_date,
           status: order.status,
           advance_payment: order.advance_payment,
-          items: order.items.map((i) => ({
-            product_id: i.product_id,
-            quantity: i.quantity,
-            unit_price: i.unit_price,
-          })),
+          // A return can take every line off an order, so start a blank row
+          // rather than an item-less form the schema will refuse to save.
+          items: order.items.length
+            ? order.items.map((i) => ({
+                product_id: i.product_id,
+                quantity: i.quantity,
+                unit_price: i.unit_price,
+              }))
+            : [{ product_id: undefined, quantity: 1, unit_price: 0 }],
         }
       : {
           party_id: undefined,

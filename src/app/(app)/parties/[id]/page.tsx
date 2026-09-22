@@ -16,6 +16,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { DeleteButton } from "@/components/delete-button";
+import { SearchInput } from "@/components/search-input";
 import { PaymentMethodBadge } from "@/components/payment-method-badge";
 import { formatCurrency, formatDate, computePartyBalance } from "@/lib/utils";
 import { deleteParty } from "../actions";
@@ -34,17 +35,24 @@ export async function generateMetadata({
 
 export default async function PartyDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ q?: string }>;
 }) {
-  const { id: idStr } = await params;
+  const [{ id: idStr }, { q }] = await Promise.all([params, searchParams]);
   const id = Number(idStr);
+  const term = q?.trim() ?? "";
+  const needle = term.toLowerCase();
 
   // Party, its orders (with computed totals), and payments — one parallel batch.
   const [partyRows, orders, payments] = await Promise.all([
     sql`select * from parties where id = ${id}` as unknown as Promise<Party[]>,
     sql`select o.id, o.order_number, o.order_date, o.created_at,
-          coalesce((select sum(quantity * unit_price) from order_items where order_id = o.id), 0) as total
+          coalesce((select sum(quantity * unit_price) from order_items where order_id = o.id), 0) as total,
+          coalesce((select string_agg(lower(pr.name), ' | ')
+                    from order_items oi join products pr on pr.id = oi.product_id
+                    where oi.order_id = o.id), '') as products
         from orders o where o.party_id = ${id}` as unknown as Promise<
       {
         id: number;
@@ -52,6 +60,7 @@ export default async function PartyDetailPage({
         order_date: string;
         created_at: string;
         total: number;
+        products: string; // lower-cased product names, for the search
       }[]
     >,
     sql`select id, amount, payment_date, payment_method, created_at
@@ -88,6 +97,7 @@ export default async function PartyDetailPage({
     amount: number;
     link_id: number;
     method?: PaymentMethod;
+    products: string;
   };
   const raw: Raw[] = [
     ...orders.map((o) => ({
@@ -97,20 +107,28 @@ export default async function PartyDetailPage({
       description: o.order_number,
       amount: -Number(o.total),
       link_id: o.id,
+      products: o.products ?? "",
     })),
     ...payments.map((p) => ({
       date: p.payment_date,
       sortKey: p.payment_date + p.created_at,
       type: "PAYMENT" as const,
-      description: "Payment",
+      // Negative rows are money going back out — a refund for returned goods,
+      // or a paid figure corrected downwards from the company ledger.
+      description: Number(p.amount) < 0 ? "Refund" : "Payment",
       amount: Number(p.amount),
       link_id: p.id,
       method: p.payment_method,
+      products: "",
     })),
   ].sort((a, b) => (a.sortKey < b.sortKey ? -1 : a.sortKey > b.sortKey ? 1 : 0));
 
-  const ledger: LedgerEntry[] = raw.reduce<{
-    items: LedgerEntry[];
+  // The running balance is always built over every entry, so each row keeps the
+  // balance the account really stood at then. Searching only narrows what is
+  // shown — it never re-runs the arithmetic over a subset.
+  type LedgerRow = LedgerEntry & { products: string };
+  const ledger: LedgerRow[] = raw.reduce<{
+    items: LedgerRow[];
     running: number;
   }>(
     (state, e) => {
@@ -123,11 +141,18 @@ export default async function PartyDetailPage({
         balance_after: running,
         link_id: e.link_id,
         method: e.method,
+        products: e.products,
       });
       return { items: state.items, running };
     },
     { items: [], running: -Number(party.opening_balance) },
   ).items;
+
+  // A product search is a search for orders, so payments drop out of the view
+  // while one is on — they carry no products to match.
+  const visible = needle
+    ? ledger.filter((e) => e.type === "ORDER" && e.products.includes(needle))
+    : ledger;
 
   const due = accountBalance < 0;
   const settled = accountBalance === 0;
@@ -200,11 +225,25 @@ export default async function PartyDetailPage({
       </Card>
 
       <div id="history" className="scroll-mt-6 space-y-3">
-        <h2 className="text-lg font-semibold">History</h2>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <h2 className="text-lg font-semibold">History</h2>
+          <SearchInput
+            defaultValue={term}
+            placeholder="Search orders by product…"
+          />
+        </div>
+        {term ? (
+          <p className="text-sm text-muted-foreground">
+            {visible.length} order{visible.length === 1 ? "" : "s"} with a
+            product matching “{term}”. Payments are hidden while searching.
+          </p>
+        ) : null}
         <Card>
-          {ledger.length === 0 ? (
+          {visible.length === 0 ? (
             <div className="p-8 text-center text-sm text-muted-foreground">
-              No orders or payments yet.
+              {term
+                ? `No orders for ${party.name} include a product matching “${term}”.`
+                : "No orders or payments yet."}
             </div>
           ) : (
             <Table>
@@ -219,7 +258,7 @@ export default async function PartyDetailPage({
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {ledger.map((e, i) => (
+                {visible.map((e, i) => (
                   <TableRow key={`${e.type}-${e.link_id}-${i}`}>
                     <TableCell>{formatDate(e.date)}</TableCell>
                     <TableCell>

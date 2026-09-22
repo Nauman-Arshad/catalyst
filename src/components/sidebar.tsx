@@ -9,6 +9,7 @@ import {
   Package,
   ClipboardList,
   CreditCard,
+  Undo2,
   History,
   Building2,
   PanelLeftClose,
@@ -23,6 +24,7 @@ const nav = [
   { href: "/products", label: "Products", icon: Package },
   { href: "/orders", label: "Orders", icon: ClipboardList },
   { href: "/payments", label: "Payments", icon: CreditCard },
+  { href: "/returns", label: "Returns", icon: Undo2 },
   { href: "/party-history", label: "Party History", icon: History },
   { href: "/companies", label: "Company Ledger", icon: Building2 },
 ];
