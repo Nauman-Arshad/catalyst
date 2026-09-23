@@ -1,11 +1,7 @@
 import "server-only";
 import { sql } from "@/lib/db";
 import { computeOrderCompanyCredit } from "@/lib/utils";
-import type {
-  CompanyLedgerDay,
-  CompanyPayment,
-  PaymentMethod,
-} from "@/types";
+import type { CompanyLedgerDay, CompanyPayment } from "@/types";
 
 type OrderRow = {
   id: number;
@@ -73,14 +69,19 @@ export function allocateReceived(
   return received;
 }
 
+// Customer payments (the `payments` table) are deliberately not read here:
+// adding, editing or deleting one must never change the Company Ledger. Each
+// day's bill is derived from its orders alone. What has been paid is entered
+// on this page only: per order in `company_ledger_order_paid`, and for the day
+// as a whole (no party named) in `company_ledger_days`.
 export async function loadCompanyLedger(): Promise<CompanyLedgerDay[]> {
-  const [orders, pools, methodRows] = await Promise.all([
+  const [orders, paidRows] = await Promise.all([
     sql`
       select o.id, o.order_number, o.order_date, o.created_at,
         p.name as party_name, p.id as party_id,
         coalesce(sum(oi.quantity * coalesce(oi.company_rate, pr.company_rate, 0)), 0) as bill,
         coalesce(sum(oi.quantity * oi.unit_price), 0) as total,
-        coalesce((select sum(amount) from payments where order_id = o.id), 0) as linked_paid,
+        coalesce((select amount_paid from company_ledger_order_paid where order_id = o.id), 0) as linked_paid,
         count(oi.id) filter (where coalesce(oi.company_rate, pr.company_rate) is null) as missing_rates
       from orders o
       join parties p on p.id = o.party_id
@@ -90,51 +91,16 @@ export async function loadCompanyLedger(): Promise<CompanyLedgerDay[]> {
       order by o.order_date desc, o.created_at asc
     ` as unknown as Promise<OrderRow[]>,
     sql`
-      select party_id, coalesce(sum(amount), 0) as pool
-      from payments where order_id is null group by party_id
-    ` as unknown as Promise<{ party_id: number; pool: number }[]>,
-    // How the money against each order came in. Only payments that name an
-    // order can be attributed; pool money is spread by `allocateReceived` and
-    // belongs to no single method.
-    sql`
-      select order_id, payment_method
-      from payments where order_id is not null
-      group by order_id, payment_method
-    ` as unknown as Promise<
-      { order_id: number; payment_method: PaymentMethod }[]
-    >,
+      select ledger_date, amount_paid
+      from company_ledger_days where amount_paid > 0
+    ` as unknown as Promise<{ ledger_date: string; amount_paid: number }[]>,
   ]);
-
-  const methodsByOrder = new Map<number, PaymentMethod[]>();
-  for (const r of methodRows) {
-    const id = Number(r.order_id);
-    const list = methodsByOrder.get(id);
-    if (list) list.push(r.payment_method);
-    else methodsByOrder.set(id, [r.payment_method]);
-  }
-  // Stable order so the badges don't reshuffle between renders.
-  const order: PaymentMethod[] = ["cash", "bank"];
-  for (const list of methodsByOrder.values()) {
-    list.sort((a, b) => order.indexOf(a) - order.indexOf(b));
-  }
-
-  const received = allocateReceived(
-    orders.map((o) => ({
-      id: o.id,
-      party_id: Number(o.party_id),
-      order_date: o.order_date,
-      created_at: o.created_at,
-      total: Number(o.total),
-      linked_paid: Number(o.linked_paid),
-    })),
-    new Map(pools.map((r) => [Number(r.party_id), Number(r.pool)])),
-  );
 
   const days = new Map<string, CompanyLedgerDay>();
   const day = (date: string) => {
     let d = days.get(date);
     if (!d) {
-      d = { date, orders: [], bill: 0, paid: 0, missing_rates: 0 };
+      d = { date, orders: [], bill: 0, paid: 0, day_paid: 0, missing_rates: 0 };
       days.set(date, d);
     }
     return d;
@@ -143,10 +109,7 @@ export async function loadCompanyLedger(): Promise<CompanyLedgerDay[]> {
   for (const o of orders) {
     const d = day(o.order_date);
     const bill = Number(o.bill);
-    const paid = received.get(o.id) ?? Number(o.linked_paid);
-    // The buyer's money settles this order's company bill first, and whatever
-    // is over it stays credited rather than being written off as margin, so
-    // the surplus comes off what is still owed to the company.
+    const paid = Number(o.linked_paid);
     const { credit } = computeOrderCompanyCredit(bill, paid);
     d.orders.push({
       id: o.id,
@@ -157,11 +120,19 @@ export async function loadCompanyLedger(): Promise<CompanyLedgerDay[]> {
       paid,
       bill,
       credit,
-      methods: methodsByOrder.get(o.id) ?? [],
+      methods: [],
     });
     d.bill += bill;
     d.paid += credit;
     d.missing_rates += Number(o.missing_rates);
+  }
+
+  // A paid figure is kept even if the day's orders have since been deleted,
+  // so money already handed over never drops out of the totals unseen.
+  for (const r of paidRows) {
+    const d = day(r.ledger_date);
+    d.day_paid = Number(r.amount_paid);
+    d.paid += d.day_paid;
   }
 
   return [...days.values()].sort((a, b) =>

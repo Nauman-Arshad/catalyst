@@ -33,11 +33,11 @@ import {
   loadCompanyPayments,
   sumCompanyPayments,
 } from "./_lib/ledger";
-import { EditPaidButton } from "./_components/edit-paid-button";
 import {
   AddPaymentButton,
   EditPaymentButton,
 } from "./_components/company-payment-buttons";
+import { DayPaidButton } from "./_components/day-paid-button";
 import { DeleteButton } from "@/components/delete-button";
 import { PaymentMethodBadge } from "@/components/payment-method-badge";
 import { deleteCompanyPayment } from "./actions";
@@ -221,7 +221,7 @@ export default async function CompanyLedgerPage({
                                 href={`/orders/${o.id}`}
                                 title={`${o.order_number} · sale ${formatCurrency(
                                   o.total,
-                                )} · received ${formatCurrency(o.paid)}`}
+                                )} · paid ${formatCurrency(o.paid)}`}
                                 className={cn(
                                   "flex flex-col gap-0.5 rounded-md border px-2 py-1 text-xs transition-colors",
                                   settled
@@ -299,12 +299,7 @@ export default async function CompanyLedgerPage({
                       <StatusBadge status={b.status} />
                     </TableCell>
                     <TableCell className="text-right">
-                      <EditPaidButton
-                        date={d.date}
-                        bill={d.bill}
-                        paid={d.paid}
-                        orders={d.orders}
-                      />
+                      <DayPaidButton day={d} />
                     </TableCell>
                   </TableRow>
                 );

@@ -25,7 +25,7 @@ import {
   DialogClose,
 } from "@/components/ui/dialog";
 import { PAYMENT_METHODS } from "@/components/payment-method-badge";
-import { formatCurrency, formatDate } from "@/lib/utils";
+import { blockNonDigits, formatCurrency, formatDate } from "@/lib/utils";
 import { addCompanyPayment, updateCompanyPayment } from "../actions";
 import type { CompanyPayment } from "@/types";
 
@@ -121,9 +121,12 @@ function CompanyPaymentDialog({
               <Input
                 id={`${idPrefix}-amount`}
                 type="number"
-                step="0.01"
+                step="1"
                 min="0"
-                placeholder="0.00"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                onKeyDown={blockNonDigits}
+                placeholder="0"
                 {...register("amount")}
               />
               {errors.amount ? (

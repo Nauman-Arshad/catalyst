@@ -18,7 +18,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Card, CardContent } from "@/components/ui/card";
-import { formatCurrency } from "@/lib/utils";
+import { blockNonDigits, formatCurrency } from "@/lib/utils";
 
 type ProductOption = { id: number; name: string; unit_price: number };
 
@@ -64,8 +64,7 @@ export function OrderForm({
           order_date: order.order_date,
           status: order.status,
           advance_payment: order.advance_payment,
-          // A return can take every line off an order, so start a blank row
-          // rather than an item-less form the schema will refuse to save.
+          
           items: order.items.length
             ? order.items.map((i) => ({
                 product_id: i.product_id,
@@ -191,7 +190,14 @@ export function OrderForm({
                 />
                 <Input
                   type="number"
-                  step="0.01"
+                  step="1"
+                  min="0"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  onKeyDown={blockNonDigits}
+                  aria-invalid={
+                    errors.items?.[index]?.unit_price ? true : undefined
+                  }
                   {...register(`items.${index}.unit_price`)}
                 />
                 <div className="text-right text-sm font-medium tabular-nums">
@@ -216,6 +222,10 @@ export function OrderForm({
             <p className="text-xs text-destructive">
               {errors.items.message ??
                 errors.items.root?.message ??
+                (Array.isArray(errors.items)
+                  ? errors.items.find((e) => e?.unit_price)?.unit_price
+                      ?.message
+                  : undefined) ??
                 "Check the items."}
             </p>
           ) : null}
@@ -257,7 +267,11 @@ export function OrderForm({
               <Label>Advance amount (PKR)</Label>
               <Input
                 type="number"
-                step="0.01"
+                step="1"
+                min="0"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                onKeyDown={blockNonDigits}
                 {...register("advance_payment")}
               />
               {order ? (
