@@ -50,6 +50,7 @@ export const returnItemSchema = z.object({
   quantity: z.coerce
     .number({ message: "Enter a quantity" })
     .refine(Number.isFinite, "Enter a valid quantity")
+    .int("Whole numbers only")
     .min(0, "Qty must be ≥ 0")
     .default(0),
 });

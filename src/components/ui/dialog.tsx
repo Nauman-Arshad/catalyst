@@ -22,7 +22,10 @@ function DialogContent({
       <DialogPrimitive.Overlay className="dlg-overlay fixed inset-0 z-50 bg-black/50" />
       <DialogPrimitive.Content
         className={cn(
-          "dlg-content fixed left-1/2 top-1/2 z-50 grid w-full max-w-md -translate-x-1/2 -translate-y-1/2 gap-4 rounded-xl border bg-card p-6 shadow-lg",
+          // minmax(0,1fr): an implicit `auto` track grows to its content's
+          // min-content width (a long nowrap product name), pushing children
+          // past the dialog's edge on phones instead of letting them shrink.
+          "dlg-content fixed left-1/2 top-1/2 z-50 grid w-[calc(100%-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 grid-cols-[minmax(0,1fr)] gap-4 rounded-xl border bg-card p-6 shadow-lg",
           className,
         )}
         {...props}
