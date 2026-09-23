@@ -111,6 +111,8 @@ export type CompanyLedgerDay = {
   }[];
   bill: number; 
   paid: number; 
+  // The part of `paid` entered for the day as a whole, not against a party.
+  day_paid: number;
   missing_rates: number;
 };
 

@@ -5,6 +5,7 @@
 drop table if exists product_return_items cascade;
 drop table if exists product_returns      cascade;
 drop table if exists company_payments    cascade;
+drop table if exists company_ledger_order_paid cascade;
 drop table if exists company_ledger_days cascade;
 drop table if exists company_purchases   cascade;
 drop table if exists companies           cascade;
@@ -112,6 +113,12 @@ create index product_return_items_return_idx on product_return_items (return_id)
 create table company_ledger_days (
   ledger_date  date primary key,
   amount_paid  numeric(14,2) not null default 0 check (amount_paid >= 0),
+  updated_at   timestamptz not null default now()
+);
+
+create table company_ledger_order_paid (
+  order_id     bigint primary key references orders (id) on delete cascade,
+  amount_paid  numeric(14,2) not null check (amount_paid > 0),
   updated_at   timestamptz not null default now()
 );
 

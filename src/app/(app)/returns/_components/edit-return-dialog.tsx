@@ -35,6 +35,11 @@ function qtyOf(value: unknown): number {
   return Number.isFinite(n) && n > 0 ? n : 0;
 }
 
+// Quantities are whole units, so keys that could only type a fraction, an
+// exponent or a sign are refused before they reach the input.
+function blockNonDigits(e: React.KeyboardEvent<HTMLInputElement>) {
+  if ([".", ",", "e", "E", "+", "-"].includes(e.key)) e.preventDefault();
+}
 
 export function EditReturnButton({ record }: { record: ReturnRecord }) {
   const router = useRouter();
@@ -45,7 +50,7 @@ export function EditReturnButton({ record }: { record: ReturnRecord }) {
     id: record.id,
     return_date: record.return_date,
     note: record.note ?? "",
-  
+
     refund: record.refund_amount > 0,
     payment_method: record.refund_method ?? "cash",
     items: record.items.map((i) => ({
@@ -70,7 +75,7 @@ export function EditReturnButton({ record }: { record: ReturnRecord }) {
 
   const rows = record.items.map((item, index) => {
     const quantity = qtyOf(watchedItems?.[index]?.quantity);
-   
+
     const max = roundMoney(item.quantity + item.line_remaining);
     return {
       item,
@@ -79,9 +84,11 @@ export function EditReturnButton({ record }: { record: ReturnRecord }) {
       max,
       amount: roundMoney(quantity * item.unit_price),
       overLimit: quantity > max,
+      notWhole: !Number.isInteger(quantity),
     };
   });
   const overLimit = rows.some((r) => r.overLimit);
+  const notWhole = rows.some((r) => r.notWhole);
   const anyQuantity = rows.some((r) => r.quantity > 0);
 
   const restoredTotal = roundMoney(record.order_total + record.total_amount);
@@ -152,47 +159,59 @@ export function EditReturnButton({ record }: { record: ReturnRecord }) {
               <span className="text-right">Return amount</span>
             </div>
 
-            {rows.map(({ item, index, max, amount, overLimit: over }) => (
-              <div
-                key={item.id}
-                className="grid gap-2 rounded-lg border p-3 sm:grid-cols-[2fr_0.7fr_0.9fr_1fr] sm:items-center sm:border-0 sm:p-1"
-              >
-                <div className="min-w-0">
-                  <p className="truncate font-medium">{item.product_name}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {formatCurrency(item.unit_price)} each
-                  </p>
-                </div>
-                <div className="text-sm tabular-nums text-muted-foreground sm:text-right">
-                  <span className="sm:hidden">Max: </span>
-                  {max}
-                </div>
-                <div>
-                  <Input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    max={max}
-                    placeholder="0"
-                    aria-label={`Quantity of ${item.product_name} returned`}
-                    aria-invalid={over || undefined}
-                    {...register(`items.${index}.quantity`)}
-                  />
-                  <input
-                    type="hidden"
-                    {...register(`items.${index}.return_item_id`)}
-                  />
-                </div>
-                <div className="text-sm font-medium tabular-nums sm:text-right">
-                  {formatCurrency(amount)}
-                  {over ? (
-                    <p className="text-xs font-normal text-destructive">
-                      At most {max}
+            {rows.map(
+              ({
+                item,
+                index,
+                max,
+                amount,
+                overLimit: over,
+                notWhole: frac,
+              }) => (
+                <div
+                  key={item.id}
+                  className="grid gap-2 rounded-lg border p-3 sm:grid-cols-[2fr_0.7fr_0.9fr_1fr] sm:items-center sm:border-0 sm:p-1"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate font-medium">{item.product_name}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {formatCurrency(item.unit_price)} each
                     </p>
-                  ) : null}
+                  </div>
+                  <div className="text-sm tabular-nums text-muted-foreground sm:text-right">
+                    <span className="sm:hidden">Max: </span>
+                    {max}
+                  </div>
+                  <div>
+                    <Input
+                      type="number"
+                      step="1"
+                      min="0"
+                      max={max}
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      placeholder="0"
+                      aria-label={`Quantity of ${item.product_name} returned`}
+                      aria-invalid={over || frac || undefined}
+                      onKeyDown={blockNonDigits}
+                      {...register(`items.${index}.quantity`)}
+                    />
+                    <input
+                      type="hidden"
+                      {...register(`items.${index}.return_item_id`)}
+                    />
+                  </div>
+                  <div className="text-sm font-medium tabular-nums sm:text-right">
+                    {formatCurrency(amount)}
+                    {over || frac ? (
+                      <p className="text-xs font-normal text-destructive">
+                        {frac ? "Whole numbers only" : `At most ${max}`}
+                      </p>
+                    ) : null}
+                  </div>
                 </div>
-              </div>
-            ))}
+              ),
+            )}
 
             {errors.items ? (
               <p className="text-xs text-destructive">
@@ -288,7 +307,7 @@ export function EditReturnButton({ record }: { record: ReturnRecord }) {
             </DialogClose>
             <Button
               type="submit"
-              disabled={pending || overLimit || !anyQuantity}
+              disabled={pending || overLimit || notWhole || !anyQuantity}
             >
               {pending ? "Saving…" : "Save changes"}
             </Button>

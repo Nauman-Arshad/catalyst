@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
+import { blockNonDigits } from "@/lib/utils";
 import type { Product } from "@/types";
 
 export function ProductForm({ product }: { product?: Product }) {
@@ -66,8 +67,12 @@ export function ProductForm({ product }: { product?: Product }) {
             <Label>Unit price (PKR)</Label>
             <Input
               type="number"
-              step="0.01"
-              placeholder="0.00"
+              step="1"
+              min="0"
+              inputMode="numeric"
+              pattern="[0-9]*"
+              placeholder="0"
+              onKeyDown={blockNonDigits}
               {...register("unit_price")}
             />
             {errors.unit_price ? (
@@ -80,9 +85,12 @@ export function ProductForm({ product }: { product?: Product }) {
             <Label>Company rate (PKR)</Label>
             <Input
               type="number"
-              step="0.01"
+              step="1"
               min="0"
+              inputMode="numeric"
+              pattern="[0-9]*"
               placeholder="Optional"
+              onKeyDown={blockNonDigits}
               {...register("company_rate")}
             />
             <p className="text-xs text-muted-foreground">

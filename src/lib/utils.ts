@@ -1,6 +1,11 @@
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
 
+
+export function blockNonDigits(e: { key: string; preventDefault(): void }) {
+  if ([".", ",", "e", "E", "+", "-"].includes(e.key)) e.preventDefault();
+}
+
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
@@ -72,10 +77,7 @@ export function computePaymentStatus(
   return "paid";
 }
 
-// Compute party account balance.
-// Orders are debits (subtract), payments are credits (add), matching the
-// running-balance ledger on the party detail page. Per the spec's display
-// rule: balance < 0 = amount due, balance >= 0 = advance/credit.
+
 export function computePartyBalance(
   openingBalance: number,
   ordersTotal: number,

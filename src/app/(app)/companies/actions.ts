@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { auth } from "@clerk/nextjs/server";
 import { sql } from "@/lib/db";
 import {
+  companyDayPaidSchema,
   companyPaymentEditSchema,
   companyPaymentSchema,
   orderPaidSchema,
@@ -50,6 +51,62 @@ export async function setOrderPaid(values: unknown): Promise<ActionResult> {
   revalidatePath("/parties");
   revalidatePath(`/parties/${partyId}`);
   revalidatePath("/party-history");
+  revalidatePath("/");
+  return { ok: true };
+}
+
+// Set what was paid to the company for one day: an amount per order's party,
+// plus one for the day as a whole. These live only on the Company Ledger —
+// they are not customer payments, so no party balance or payment list moves.
+// An amount of 0 removes its row, so "never paid" and "reset" look the same.
+export async function setCompanyDayPaid(values: unknown): Promise<ActionResult> {
+  await auth.protect();
+  const parsed = companyDayPaidSchema.safeParse(values);
+  if (!parsed.success) {
+    return {
+      ok: false,
+      error: parsed.error.issues[0]?.message ?? "Invalid input",
+    };
+  }
+  const { ledger_date, amount_paid, orders } = parsed.data;
+
+  try {
+    await sql.begin(async (tx) => {
+      if (amount_paid === 0) {
+        await tx`delete from company_ledger_days where ledger_date = ${ledger_date}`;
+      } else {
+        await tx`
+          insert into company_ledger_days (ledger_date, amount_paid)
+          values (${ledger_date}, ${amount_paid})
+          on conflict (ledger_date)
+          do update set amount_paid = excluded.amount_paid, updated_at = now()
+        `;
+      }
+
+      for (const o of orders) {
+        if (o.amount_paid === 0) {
+          await tx`delete from company_ledger_order_paid where order_id = ${o.order_id}`;
+          continue;
+        }
+        // Only an order that really is on this day can be paid from it.
+        const rows = await tx`
+          insert into company_ledger_order_paid (order_id, amount_paid)
+          select id, ${o.amount_paid} from orders
+          where id = ${o.order_id} and order_date = ${ledger_date}
+          on conflict (order_id)
+          do update set amount_paid = excluded.amount_paid, updated_at = now()
+          returning order_id
+        `;
+        if (rows.length === 0) {
+          throw new Error(`Order ${o.order_id} is not on ${ledger_date}`);
+        }
+      }
+    });
+  } catch (e) {
+    return { ok: false, error: (e as Error).message };
+  }
+
+  revalidatePath("/companies");
   revalidatePath("/");
   return { ok: true };
 }
