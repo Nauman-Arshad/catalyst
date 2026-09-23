@@ -49,14 +49,14 @@ export default async function ReturnsPage({
       <div className="grid gap-4 sm:grid-cols-3">
         <Tile label="Returns" value={String(returns.length)} />
         <Tile
-          label="Value returned"
+          label="Amount"
           value={formatCurrency(returnedTotal)}
           tone="text-red-600"
         />
-        <Tile
+        {/* <Tile
           label="Refunded to customers"
           value={formatCurrency(refundedTotal)}
-        />
+        /> */}
       </div>
 
       <Card>

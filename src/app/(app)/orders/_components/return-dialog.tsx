@@ -32,7 +32,7 @@ import { createReturn } from "../actions";
 export type ReturnLine = {
   id: number;
   product_name: string;
-  quantity: number; // what is still on the order
+  quantity: number; 
   unit_price: number;
 };
 
@@ -45,14 +45,15 @@ function qtyOf(value: unknown): number {
   return Number.isFinite(n) && n > 0 ? n : 0;
 }
 
-/**
- * Takes products back off an order.
- *
- * Everything the return touches is derived from the order's line items and the
- * payments table, so the dialog only has to collect quantities: the amount, the
- * new order total and the refund are the same arithmetic the server redoes
- * against the locked rows. Two steps — enter, then confirm what will change.
- */
+
+function blockNonDigits(e: React.KeyboardEvent<HTMLInputElement>) {
+  if ([".", ",", "e", "E", "+", "-"].includes(e.key)) e.preventDefault();
+}
+
+
+const editable = "cursor-text select-text [caret-color:auto]";
+
+
 export function ReturnButton({
   orderId,
   orderNumber,
@@ -99,10 +100,12 @@ export function ReturnButton({
       quantity,
       amount: roundMoney(quantity * line.unit_price),
       overLimit: quantity > line.quantity,
+      notWhole: !Number.isInteger(quantity),
     };
   });
   const returning = rows.filter((r) => r.quantity > 0);
   const overLimit = rows.some((r) => r.overLimit);
+  const notWhole = rows.some((r) => r.notWhole);
 
   const orderTotal = roundMoney(
     lines.reduce((s, l) => s + l.quantity * l.unit_price, 0),
@@ -162,10 +165,10 @@ export function ReturnButton({
         <Undo2 className="size-4" /> Return Products
       </Button>
 
-      <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
+      <DialogContent className="max-h-[90vh] max-w-2xl cursor-default select-none overflow-y-auto caret-transparent max-sm:p-4">
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
-          <DialogHeader>
-            <DialogTitle>
+          <DialogHeader className="pr-6">
+            <DialogTitle className="break-words">
               {step === "edit"
                 ? `Return products · ${orderNumber}`
                 : "Confirm this return"}
@@ -186,47 +189,66 @@ export function ReturnButton({
                 <span className="text-right">Return amount</span>
               </div>
 
-              {rows.map(({ line, index, amount, overLimit: over }) => (
-                <div
-                  key={line.id}
-                  className="grid gap-2 rounded-lg border p-3 sm:grid-cols-[2fr_0.7fr_0.9fr_1fr] sm:items-center sm:border-0 sm:p-1"
-                >
-                  <div className="min-w-0">
-                    <p className="truncate font-medium">{line.product_name}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {formatCurrency(line.unit_price)} each
-                    </p>
-                  </div>
-                  <div className="text-sm tabular-nums text-muted-foreground sm:text-right">
-                    <span className="sm:hidden">On order: </span>
-                    {line.quantity}
-                  </div>
-                  <div>
-                    <Input
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      max={line.quantity}
-                      placeholder="0"
-                      aria-label={`Quantity of ${line.product_name} to return`}
-                      aria-invalid={over || undefined}
-                      {...register(`items.${index}.quantity`)}
-                    />
-                    <input
-                      type="hidden"
-                      {...register(`items.${index}.order_item_id`)}
-                    />
-                  </div>
-                  <div className="text-sm font-medium tabular-nums sm:text-right">
-                    {formatCurrency(amount)}
-                    {over ? (
-                      <p className="text-xs font-normal text-destructive">
-                        Only {line.quantity} left
+              {rows.map(
+                ({ line, index, amount, overLimit: over, notWhole: frac }) => (
+                
+                  <div
+                    key={line.id}
+                    className="grid grid-cols-[minmax(0,1fr)_6rem] items-center gap-x-3 gap-y-2 rounded-lg border p-3 sm:grid-cols-[2fr_0.7fr_0.9fr_1fr] sm:gap-2 sm:border-0 sm:p-1"
+                  >
+                    <div className="col-span-2 min-w-0 sm:col-span-1">
+                      <p
+                        className="break-words font-medium sm:truncate"
+                        title={line.product_name}
+                      >
+                        {line.product_name}
                       </p>
-                    ) : null}
+                      <p className="text-xs text-muted-foreground">
+                        {formatCurrency(line.unit_price)} each
+                      </p>
+                    </div>
+                    <div className="text-sm tabular-nums text-muted-foreground sm:text-right">
+                      <span className="sm:hidden">On order: </span>
+                      {line.quantity}
+                    </div>
+                    <div>
+                      <Input
+                        type="number"
+                        step="1"
+                        min="0"
+                        max={line.quantity}
+                        inputMode="numeric"
+                        pattern="[0-9]*"
+                        placeholder="0"
+                        aria-label={`Quantity of ${line.product_name} to return`}
+                        aria-invalid={over || frac || undefined}
+                        onKeyDown={blockNonDigits}
+                        className={editable}
+                        {...register(`items.${index}.quantity`)}
+                      />
+                      <input
+                        type="hidden"
+                        {...register(`items.${index}.order_item_id`)}
+                      />
+                    </div>
+                    <div className="col-span-2 flex items-baseline justify-between gap-3 text-sm font-medium tabular-nums sm:col-span-1 sm:block sm:text-right">
+                      <span className="font-normal text-muted-foreground sm:hidden">
+                        Return amount
+                      </span>
+                      <span>
+                        {formatCurrency(amount)}
+                        {over || frac ? (
+                          <span className="block text-xs font-normal text-destructive">
+                            {frac
+                              ? "Whole numbers only"
+                              : `Only ${line.quantity} left`}
+                          </span>
+                        ) : null}
+                      </span>
+                    </div>
                   </div>
-                </div>
-              ))}
+                ),
+              )}
 
               {errors.items ? (
                 <p className="text-xs text-destructive">
@@ -242,6 +264,7 @@ export function ReturnButton({
                   <Input
                     id="return-date"
                     type="date"
+                    className={editable}
                     {...register("return_date")}
                   />
                   {errors.return_date ? (
@@ -255,6 +278,7 @@ export function ReturnButton({
                   <Input
                     id="return-note"
                     placeholder="Damaged, wrong shade…"
+                    className={editable}
                     {...register("note")}
                   />
                 </div>
@@ -270,7 +294,7 @@ export function ReturnButton({
 
               {refundDue > 0 ? (
                 <div className="space-y-3 rounded-lg border border-amber-200 bg-amber-50 p-3">
-                  <label className="flex items-start gap-2 text-sm font-medium">
+                  <label className="flex cursor-pointer items-start gap-2 text-sm font-medium">
                     <input
                       type="checkbox"
                       className="mt-0.5 size-4 accent-purple-600"
@@ -288,7 +312,11 @@ export function ReturnButton({
                   {wantsRefund ? (
                     <div className="max-w-[12rem] space-y-1.5">
                       <Label htmlFor="return-method">Paid back by</Label>
-                      <Select id="return-method" {...register("payment_method")}>
+                      <Select
+                        id="return-method"
+                        className="cursor-pointer"
+                        {...register("payment_method")}
+                      >
                         {PAYMENT_METHODS.map((m) => (
                           <option key={m.value} value={m.value}>
                             {m.label}
@@ -311,7 +339,7 @@ export function ReturnButton({
                     key={line.id}
                     className="flex items-baseline justify-between gap-3 text-sm"
                   >
-                    <span>
+                    <span className="min-w-0 break-words">
                       <span className="font-medium tabular-nums">
                         {quantity}
                       </span>{" "}
@@ -363,7 +391,9 @@ export function ReturnButton({
             <Button
               type="submit"
               disabled={
-                pending || (step === "edit" && (overLimit || returning.length === 0))
+                pending ||
+                (step === "edit" &&
+                  (overLimit || notWhole || returning.length === 0))
               }
             >
               {step === "edit"
