@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { UserButton } from "@clerk/nextjs";
+import { AccountButton } from "@/components/account-button";
 import {
   LayoutDashboard,
   Users,
@@ -118,7 +118,7 @@ export function Sidebar({
           collapsed && "flex justify-center",
         )}
       >
-        <UserButton showName={!collapsed} />
+        <AccountButton showName={!collapsed} />
       </div>
     </aside>
   );

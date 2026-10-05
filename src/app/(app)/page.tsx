@@ -4,6 +4,7 @@ import { Wallet, ClipboardList, Users, Eye } from "lucide-react";
 import { sql } from "@/lib/db";
 import type { ActivityEntry } from "@/types";
 import { Button } from "@/components/ui/button";
+import { DownloadDataButton } from "@/components/download-data-button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   Table,
@@ -115,13 +116,16 @@ export default async function DashboardPage({
 
   return (
     <div className="space-y-8">
-      <div>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div>
         <h1 className="text-2xl font-semibold tracking-tight">
           {greet()}, {user?.firstName ?? "there"}
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
           Here&apos;s what&apos;s happening with your business today.
         </p>
+        </div>
+        <DownloadDataButton format="csv" label="Download All Data (CSV)" />
       </div>
 
       <DateFilter active={active} from={from} to={to} />
