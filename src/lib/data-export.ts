@@ -138,10 +138,14 @@ export function createDataExportHandler({ sql, authenticate, scope = "user", aut
           await write(JSON.stringify({ export_version: "1.0", exported_at: exportedAt, user, ...(scope === "all" ? { export_scope: "all_application_data", unavailable_tables: unavailableTables } : {}) }).slice(0, -1) + ',"data":{');
         }
         let firstTable = true;
+        // Written after the data, so a file can be checked on its own and
+        // restored table by table in this (parent-before-child) order.
+        const manifest: Record<string, { rows: number; key: string; columns: readonly string[] }> = {};
         for (const [table, columns] of Object.entries(tables)) {
           if (format === "json") await write((firstTable ? "" : ",") + JSON.stringify(table) + ":[");
           firstTable = false;
           let firstRow = true;
+          let rowCount = 0;
           const key = table === "_user_reassign_backup_20260926" ? "key" : table === "company_ledger_days" ? "ledger_date" : table === "company_ledger_order_paid" ? "order_id" : "id";
           // All live child tables have user_id; composite foreign keys enforce
           // the same owner on both sides. Export them independently so every
@@ -156,11 +160,13 @@ export function createDataExportHandler({ sql, authenticate, scope = "user", aut
               if (scope === "user" && row.user_id !== user.id) throw new Error("Ownership mismatch");
               await write(format === "csv" ? csvRow(table, row, exportedAt, columnsForCsv) : (firstRow ? "" : ",") + JSON.stringify(row));
               firstRow = false;
+              rowCount++;
             }
           }
+          manifest[table] = { rows: rowCount, key, columns };
           if (format === "json") await write("]");
         }
-        if (format === "json") await write("}}");
+        if (format === "json") await write("}," + JSON.stringify({ tables: manifest }).slice(1));
       });
 
       stage = "download";

@@ -8,8 +8,10 @@
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
+    "test": "node --test tests/*.test.mjs",
     "db:schema": "node --env-file=.env -e \"const {execSync}=require('child_process');execSync('psql \\\"'+process.env.SUPABASE_CONNECTION_STRING+'\\\" -v ON_ERROR_STOP=1 -f db/schema.sql',{stdio:'inherit'})\"",
-    "db:seed": "node --env-file=.env db/seed.mjs"
+    "db:seed": "node --env-file=.env db/seed.mjs",
+    "db:restore": "node db/restore-backup.mjs"
   },
   "dependencies": {
     "@clerk/nextjs": "^7.5.8",

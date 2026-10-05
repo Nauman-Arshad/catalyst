@@ -14,12 +14,13 @@ export function DownloadBackupButton() {
     setError("");
     try {
       const response = await fetch("/api/backup/download", { cache: "no-store" });
+      // A signed-out session gets Clerk's HTML page (404), never JSON.
+      if (!response.headers.get("content-type")?.includes("application/json")) {
+        throw new Error("Your session has expired. Please sign in again to download your backup.");
+      }
       if (!response.ok) {
         const result = await response.json().catch(() => null);
         throw new Error(result?.error || "Unable to prepare the backup. Please try again.");
-      }
-      if (!response.headers.get("content-type")?.includes("application/json")) {
-        throw new Error("Please sign in again to download your backup.");
       }
       const blob = await response.blob();
       const url = URL.createObjectURL(blob);

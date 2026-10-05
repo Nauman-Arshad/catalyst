@@ -143,6 +143,12 @@ test("authorized admin exports both owners, all batches and unchanged ownership 
         assert.deepEqual(new Set(body.data[table].map((row) => row.user_id)), new Set(["user_a", "user_b"]));
       }
       assert.deepEqual(body.data._user_reassign_backup_20260926, [{ tbl: "orders", key: "1", old_user_id: "previous-owner" }]);
+      // The manifest lists every table in data order with its row count, so a
+      // restore can check the file on its own and load parents before children.
+      assert.deepEqual(Object.keys(body.tables), Object.keys(body.data));
+      for (const [table, rows] of Object.entries(body.data)) assert.equal(body.tables[table].rows, rows.length, table);
+      assert.deepEqual(body.tables.parties.columns, exportTables.parties);
+      assert.equal(body.tables.company_ledger_days.key, "ledger_date");
     } else {
       const parsed = Papa.parse(text, { header: true, skipEmptyLines: true });
       assert.deepEqual(parsed.errors, []);
