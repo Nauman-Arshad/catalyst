@@ -203,11 +203,16 @@ export function createDataExportHandler({ sql, authenticate, scope = "user", aut
       await cleanup().catch(() => {});
       const reference = randomUUID();
       // Only fixed stage names and allowlisted codes leave the exception path.
-      try { reportFailure({ reference, stage, code: safeErrorCode(cause) }); } catch { /* Diagnostics must not break the safe error response. */ }
+      const code = safeErrorCode(cause);
+      try { reportFailure({ reference, stage, code }); } catch { /* Diagnostics must not break the safe error response. */ }
       // Database/Clerk errors can contain credentials or SQL: never return them.
+      // The fixed stage name and allowlisted error code are safe to show, so a
+      // failure can be diagnosed from the screen without server logs.
       return Response.json({
         error: "Unable to prepare your data. Please try again. If this continues, contact support.",
         reference,
+        stage,
+        code,
       }, { status: 500, headers: privateHeaders });
     }
   };

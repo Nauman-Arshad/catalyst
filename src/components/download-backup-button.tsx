@@ -27,7 +27,8 @@ export function DownloadBackupButton({ scope = "all" }: { scope?: keyof typeof m
       }
       if (!response.ok) {
         const result = await response.json().catch(() => null);
-        throw new Error(result?.error || "Unable to prepare the backup. Please try again.");
+        const detail = result?.reference ? ` (Reference ${result.reference}; step: ${result.stage}, code: ${result.code})` : "";
+        throw new Error((result?.error || "Unable to prepare the backup. Please try again.") + detail);
       }
       const blob = await response.blob();
       const url = URL.createObjectURL(blob);
