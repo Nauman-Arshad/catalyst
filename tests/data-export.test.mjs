@@ -40,6 +40,23 @@ test("authentication and database failures are sanitized and temporary files rem
   assert.deepEqual(await tempExports(), before);
 });
 
+test("failure diagnostics expose only reference, fixed stage, and safe code", async () => {
+  for (const code of ["42501", "ENOTFOUND", "password=must-not-leak"]) {
+    const diagnostics = [];
+    const response = await createDataExportHandler({
+      sql: { begin() { throw Object.assign(new Error("postgres://user:password@private-host SQL secret"), { code }); } },
+      authenticate: async () => identity("private-user-id"),
+      reportFailure: (diagnostic) => diagnostics.push(diagnostic),
+    })(request());
+    assert.equal(response.status, 500);
+    const body = await response.json();
+    assert.match(body.reference, /^[0-9a-f-]{36}$/);
+    assert.equal(diagnostics.length, 1);
+    assert.deepEqual(diagnostics[0], { reference: body.reference, stage: "database", code: code === "password=must-not-leak" ? "UNKNOWN" : code });
+    assert.doesNotMatch(JSON.stringify({ body, diagnostics }), /postgres:|password|private-host|private-user-id|SQL secret/);
+  }
+});
+
 test("export manifest excludes backup tables and secret columns", () => {
   assert.equal(Object.keys(exportTables).length, 12);
   for (const [table, columns] of Object.entries(exportTables)) {
@@ -49,7 +66,7 @@ test("export manifest excludes backup tables and secret columns", () => {
   }
 });
 
-function fixtureDatabase({ leak = false, unsafeRole = false } = {}) {
+function fixtureDatabase({ leak = false, unsafeRole = false, adminRole = false } = {}) {
   const fixtures = Object.fromEntries(Object.entries(exportTables).map(([table, columns]) => [table,
     ["user_a", "user_b"].flatMap((owner) => Array.from({ length: table === "parties" ? 1001 : 2 }, (_, index) => ({
       ...Object.fromEntries(columns.map((column) => [column, column === "id" ? index + 1 : null])),
@@ -57,6 +74,7 @@ function fixtureDatabase({ leak = false, unsafeRole = false } = {}) {
       password: "must-not-export", api_key: "must-not-export",
     }))),
   ]));
+  fixtures._user_reassign_backup_20260926 = [{ tbl: "orders", key: "1", old_user_id: "previous-owner" }];
   let batches = 0;
   const sql = {
     async begin(options, callback) {
@@ -68,19 +86,22 @@ function fixtureDatabase({ leak = false, unsafeRole = false } = {}) {
         const query = strings.join("?");
         if (query.includes("set local role catalyst_app")) roleSet = true;
         if (query.includes("set_config")) currentId = values[0];
-        if (query.includes("from pg_roles")) return Promise.resolve([{ rolbypassrls: unsafeRole, rolsuper: false }]);
+        if (query.includes("from pg_roles")) return Promise.resolve([{ rolbypassrls: unsafeRole || adminRole, rolsuper: false }]);
         if (query.includes("from public.")) {
-          assert.ok(roleSet && currentId);
           const [columns, table, requestedId] = values;
-          assert.equal(requestedId, currentId);
+          const scoped = query.includes("where user_id");
+          if (scoped) {
+            assert.ok(roleSet && currentId);
+            assert.equal(requestedId, currentId);
+          }
           const rows = fixtures[table.identifier]
-            .filter((row) => leak || row.user_id === currentId)
+            .filter((row) => !scoped || leak || row.user_id === currentId)
             .map((row) => Object.fromEntries(columns.identifier.map((column) => [column, row[column]])));
-          return { async cursor(size, consume) {
+          return { async *cursor(size) {
             assert.equal(size, 500);
             for (let offset = 0; offset < rows.length; offset += size) {
               batches++;
-              await consume(rows.slice(offset, offset + size));
+              yield rows.slice(offset, offset + size);
             }
           } };
         }
@@ -91,6 +112,55 @@ function fixtureDatabase({ leak = false, unsafeRole = false } = {}) {
   };
   return { sql, get batches() { return batches; } };
 }
+
+test("full exports deny non-admin and unauthenticated sessions before touching the database", async () => {
+  for (const user of [null, identity("ordinary-user")]) {
+    const response = await createDataExportHandler({ sql: noDatabase, authenticate: async () => user, scope: "all", authorizeFullExport: (id) => id === "user_admin" })(request("?user_id=user_admin&admin=true"));
+    assert.equal(response.status, user ? 403 : 401);
+  }
+  const unconfigured = await createDataExportHandler({ sql: noDatabase, authenticate: async () => identity("user_admin"), scope: "all" })(request());
+  assert.equal(unconfigured.status, 403);
+});
+
+test("authorized admin exports both owners, all batches and unchanged ownership history", async () => {
+  for (const format of ["json", "csv"]) {
+    const response = await createDataExportHandler({
+      sql: fixtureDatabase({ adminRole: true }).sql,
+      authenticate: async () => identity("user_admin"),
+      scope: "all",
+      authorizeFullExport: (id) => id === "user_admin",
+    })(request(`?format=${format}&user_id=other&scope=user`));
+    assert.equal(response.status, 200);
+    assert.match(response.headers.get("content-disposition"), /all-application-data/);
+    const text = await response.text();
+    assert.doesNotMatch(text, /must-not-export|password|api_key/);
+    if (format === "json") {
+      const body = JSON.parse(text);
+      assert.equal(body.export_scope, "all_application_data");
+      assert.equal(Object.keys(body.data).length, 13);
+      assert.equal(body.data.parties.length, 2002);
+      for (const table of Object.keys(exportTables)) {
+        assert.deepEqual(new Set(body.data[table].map((row) => row.user_id)), new Set(["user_a", "user_b"]));
+      }
+      assert.deepEqual(body.data._user_reassign_backup_20260926, [{ tbl: "orders", key: "1", old_user_id: "previous-owner" }]);
+    } else {
+      const parsed = Papa.parse(text, { header: true, skipEmptyLines: true });
+      assert.deepEqual(parsed.errors, []);
+      assert.equal(parsed.data.filter((row) => row.table === "parties").length, 2002);
+      assert.equal(parsed.data.filter((row) => row.table === "_user_reassign_backup_20260926").length, 1);
+    }
+  }
+});
+
+test("request flags cannot broaden My Data scope; full exports fail if database cannot read all owners", async () => {
+  const scoped = await createDataExportHandler({ sql: fixtureDatabase().sql, authenticate: async () => identity("user_a") })(request("?scope=all&admin=true"));
+  assert.equal(scoped.status, 200);
+  const data = (await scoped.json()).data;
+  assert.equal(Object.keys(data).length, 12);
+  assert.ok(Object.values(data).flat().every((row) => row.user_id === "user_a"));
+  const incomplete = await createDataExportHandler({ sql: fixtureDatabase().sql, authenticate: async () => identity("user_admin"), scope: "all", authorizeFullExport: () => true })(request());
+  assert.equal(incomplete.status, 500);
+});
 
 test("two populated fixture users export only their own records across multiple batches", async () => {
   const database = fixtureDatabase();
@@ -244,6 +314,28 @@ test("live read-only exports: A/B isolation, ID manipulation, completeness, rela
     const [context] = await sql`select current_user, current_setting('app.current_user_id', true) as user_id`;
     assert.notEqual(context.current_user, "catalyst_app");
     assert.ok(!context.user_id, "Transaction-local identity must not leak into a reused connection");
+    // Verify the new full-backup path reads all owners and ownership history.
+    const expected = await sql.begin("isolation level repeatable read read only", async (tx) => {
+      const counts = {};
+      for (const table of [...Object.keys(exportTables), "_user_reassign_backup_20260926"]) {
+        const [row] = await tx`select count(*)::int as count from public.${tx(table)}`;
+        counts[table] = row.count;
+      }
+      return counts;
+    });
+    for (const format of ["json", "csv"]) {
+      const full = await createDataExportHandler({ sql, authenticate: async () => identity("test-admin"), scope: "all", authorizeFullExport: (id) => id === "test-admin" })(request(`?format=${format}`));
+      assert.equal(full.status, 200);
+      if (format === "json") {
+        const body = await full.json();
+        assert.equal(body.export_scope, "all_application_data");
+        for (const [table, count] of Object.entries(expected)) assert.equal(body.data[table].length, count, table);
+      } else {
+        const parsed = Papa.parse(await full.text(), { header: true, skipEmptyLines: true });
+        assert.deepEqual(parsed.errors, []);
+        for (const [table, count] of Object.entries(expected)) assert.equal(parsed.data.filter((row) => row.table === table).length, count, table);
+      }
+    }
   } finally {
     await sql.end();
   }

@@ -3,7 +3,7 @@
 import { useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { Menu } from "lucide-react";
-import { AccountButton } from "@/components/account-button";
+import { UserButton } from "@clerk/nextjs";
 import { Sidebar } from "@/components/sidebar";
 
 
@@ -78,7 +78,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <span className="text-xl">⬡</span> Catalyst
           </Link>
           <div className="ml-auto">
-            <AccountButton />
+            <UserButton />
           </div>
         </header>
 

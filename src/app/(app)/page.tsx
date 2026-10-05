@@ -4,7 +4,6 @@ import { Wallet, ClipboardList, Users, Eye } from "lucide-react";
 import { sql } from "@/lib/db";
 import type { ActivityEntry } from "@/types";
 import { Button } from "@/components/ui/button";
-import { DownloadDataButton } from "@/components/download-data-button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   Table,
@@ -21,6 +20,8 @@ import {
 } from "@/lib/utils";
 import { resolveRange, type DateRangeParams } from "@/lib/date-range";
 import { DateFilter } from "./_components/date-filter";
+import { DownloadBackupButton } from "@/components/download-backup-button";
+import { isDataExportAdmin } from "@/lib/export-admin";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Dashboard" };
@@ -125,7 +126,7 @@ export default async function DashboardPage({
           Here&apos;s what&apos;s happening with your business today.
         </p>
         </div>
-        <DownloadDataButton format="csv" label="Download All Data (CSV)" />
+        {isDataExportAdmin(user?.id, user?.emailAddresses.find(email => email.id === user.primaryEmailAddressId)) && <div className="max-w-sm"><DownloadBackupButton /></div>}
       </div>
 
       <DateFilter active={active} from={from} to={to} />

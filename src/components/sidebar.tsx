@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { AccountButton } from "@/components/account-button";
+import { UserButton } from "@clerk/nextjs";
 import {
   LayoutDashboard,
   Users,
@@ -12,6 +12,7 @@ import {
   Undo2,
   History,
   Building2,
+  CloudUpload,
   PanelLeftClose,
   PanelLeftOpen,
   X,
@@ -27,6 +28,7 @@ const nav = [
   { href: "/returns", label: "Returns", icon: Undo2 },
   { href: "/party-history", label: "Party History", icon: History },
   { href: "/companies", label: "Company Ledger", icon: Building2 },
+  { href: "/backups", label: "Backups", icon: CloudUpload },
 ];
 
 function isActive(pathname: string, href: string) {
@@ -118,7 +120,7 @@ export function Sidebar({
           collapsed && "flex justify-center",
         )}
       >
-        <AccountButton showName={!collapsed} />
+        <UserButton showName={!collapsed} />
       </div>
     </aside>
   );
