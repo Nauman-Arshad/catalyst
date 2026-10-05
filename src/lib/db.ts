@@ -1,5 +1,6 @@
 import "server-only";
-import postgres from "postgres";
+import postgres, { type ParameterOrFragment, type TransactionSql } from "postgres";
+import { auth } from "@clerk/nextjs/server";
 
 const connectionString = process.env.SUPABASE_CONNECTION_STRING;
 
@@ -13,7 +14,7 @@ const globalForDb = globalThis as unknown as {
   sql?: ReturnType<typeof postgres>;
 };
 
-export const sql =
+const base =
   globalForDb.sql ??
   postgres(connectionString, {
     ssl: "require",
@@ -57,5 +58,34 @@ export const sql =
   });
 
 if (process.env.NODE_ENV !== "production") {
-  globalForDb.sql = sql;
+  globalForDb.sql = base;
 }
+
+// Every user owns their own rows. Each query runs in a transaction as the
+// restricted `catalyst_app` role with `app.current_user_id` set to the signed-in
+// Clerk user, so the database's row-level security policies show and change
+// only that user's rows, and new rows get that user_id from the column default.
+async function asCurrentUser<T>(fn: (tx: TransactionSql) => Promise<T>): Promise<T> {
+  const { userId } = await auth();
+  if (!userId) throw new Error("Not signed in");
+  return (await base.begin(async (tx) => {
+    await tx`select set_config('role', 'catalyst_app', true),
+                    set_config('app.current_user_id', ${userId}, true)`;
+    return fn(tx);
+  })) as T;
+}
+
+function userQuery(strings: TemplateStringsArray, ...values: ParameterOrFragment<never>[]) {
+  return asCurrentUser(async (tx) => await tx(strings, ...values));
+}
+
+/**
+ * The signed-in user's view of the database. Use it as a tagged template
+ * (sql`…`) or as sql.begin(async (tx) => …). Helpers and fragments such as
+ * tx(ids) or tx`where …` belong inside sql.begin, built with `tx`.
+ */
+export const sql = Object.assign(userQuery, { begin: asCurrentUser });
+
+// Bypasses per-user isolation. Only for the data export handlers, which set
+// their own role and owner (src/lib/data-export.ts). Never for app queries.
+export const unscopedSql = base;
