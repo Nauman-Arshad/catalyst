@@ -21,7 +21,6 @@ import {
 import { resolveRange, type DateRangeParams } from "@/lib/date-range";
 import { DateFilter } from "./_components/date-filter";
 import { DownloadBackupButton } from "@/components/download-backup-button";
-import { isDataExportAdmin } from "@/lib/export-admin";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Dashboard" };
@@ -126,7 +125,7 @@ export default async function DashboardPage({
           Here&apos;s what&apos;s happening with your business today.
         </p>
         </div>
-        {isDataExportAdmin(user?.id, user?.emailAddresses.find(email => email.id === user.primaryEmailAddressId)) && <div className="max-w-sm"><DownloadBackupButton /></div>}
+        <div className="max-w-sm"><DownloadBackupButton scope="mine" /></div>
       </div>
 
       <DateFilter active={active} from={from} to={to} />
