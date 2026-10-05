@@ -1,5 +1,5 @@
 import { auth, currentUser } from "@clerk/nextjs/server";
-import { unscopedSql as sql } from "@/lib/db";
+import { sql } from "@/lib/db";
 import { createDataExportHandler } from "@/lib/data-export";
 import { isDataExportAdmin } from "@/lib/export-admin";
 

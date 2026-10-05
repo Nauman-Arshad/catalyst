@@ -39,13 +39,9 @@ export type ReturnRecord = {
 type HeaderRow = Omit<ReturnRecord, "items">;
 type ItemRow = ReturnRecordItem & { return_id: number };
 
-export function loadReturns(orderId?: number): Promise<ReturnRecord[]> {
-  return sql.begin((tx) => loadReturnsIn(tx, orderId));
-}
-
-async function loadReturnsIn(tx: TransactionSql, orderId?: number): Promise<ReturnRecord[]> {
-  const scope = orderId ? tx`where r.order_id = ${orderId}` : tx``;
-  const headers = (await tx`
+export async function loadReturns(orderId?: number): Promise<ReturnRecord[]> {
+  const scope = orderId ? sql`where r.order_id = ${orderId}` : sql``;
+  const headers = (await sql`
     select r.id, r.order_id, o.order_number, o.party_id, p.name as party_name,
       r.return_date, r.total_amount, r.company_amount, r.refund_amount,
       r.note, pay.payment_method as refund_method, r.created_by_name, r.created_at,
@@ -62,14 +58,14 @@ async function loadReturnsIn(tx: TransactionSql, orderId?: number): Promise<Retu
 
   if (headers.length === 0) return [];
 
-  const items = (await tx`
+  const items = (await sql`
     select ri.return_id, ri.id, ri.product_id, pr.name as product_name,
       ri.quantity, ri.unit_price, ri.company_rate,
       coalesce(oi.quantity, 0) as line_remaining
     from product_return_items ri
     join products pr on pr.id = ri.product_id
     left join order_items oi on oi.id = ri.order_item_id
-    where ri.return_id in ${tx(headers.map((h) => Number(h.id)))}
+    where ri.return_id in ${sql(headers.map((h) => Number(h.id)))}
     order by ri.id
   `) as unknown as ItemRow[];
 
