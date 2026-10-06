@@ -31,7 +31,6 @@ export default async function ReturnsPage({
   const returns = filterReturns(await loadReturns(), term);
 
   const returnedTotal = returns.reduce((s, r) => s + r.total_amount, 0);
-  const refundedTotal = returns.reduce((s, r) => s + r.refund_amount, 0);
   const companyTotal = returns.reduce((s, r) => s + r.company_amount, 0);
 
   return (

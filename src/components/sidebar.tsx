@@ -12,7 +12,6 @@ import {
   Undo2,
   History,
   Building2,
-  CloudUpload,
   PanelLeftClose,
   PanelLeftOpen,
   X,
@@ -28,7 +27,6 @@ const nav = [
   { href: "/returns", label: "Returns", icon: Undo2 },
   { href: "/party-history", label: "Party History", icon: History },
   { href: "/companies", label: "Company Ledger", icon: Building2 },
-  { href: "/backups", label: "Backups", icon: CloudUpload },
 ];
 
 function isActive(pathname: string, href: string) {

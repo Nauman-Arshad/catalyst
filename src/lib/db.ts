@@ -1,5 +1,6 @@
 import "server-only";
-import postgres from "postgres";
+import postgres, { type ParameterOrFragment, type TransactionSql } from "postgres";
+import { auth } from "@clerk/nextjs/server";
 
 const connectionString = process.env.SUPABASE_CONNECTION_STRING;
 
@@ -13,7 +14,7 @@ const globalForDb = globalThis as unknown as {
   sql?: ReturnType<typeof postgres>;
 };
 
-export const sql =
+const base =
   globalForDb.sql ??
   postgres(connectionString, {
     ssl: "require",
@@ -57,5 +58,37 @@ export const sql =
   });
 
 if (process.env.NODE_ENV !== "production") {
-  globalForDb.sql = sql;
+  globalForDb.sql = base;
 }
+
+// Each query runs in its own transaction as `catalyst_app` with
+// `app.current_user_id` set, so row-level security limits it to the signed-in
+// user's rows. search_path and row_security are pinned too, because the
+// transaction pooler can hand over a connection another client changed.
+async function asCurrentUser<T>(fn: (tx: TransactionSql) => Promise<T>): Promise<T> {
+  const { userId } = await auth();
+  if (!userId) throw new Error("Not signed in");
+  return (await base.begin(async (tx) => {
+    await tx`select set_config('role', 'catalyst_app', true),
+                    set_config('app.current_user_id', ${userId}, true),
+                    set_config('search_path', 'public', true),
+                    set_config('row_security', 'on', true)`;
+    return fn(tx);
+  })) as T;
+}
+
+function userQuery(strings: TemplateStringsArray, ...values: ParameterOrFragment<never>[]) {
+  if (!Array.isArray(strings) || !("raw" in strings)) {
+    throw new Error("sql(...) helpers are only available as tx(...) inside sql.begin");
+  }
+  if (values.some((value) => typeof (value as { then?: unknown } | null)?.then === "function")) {
+    throw new Error("Nested sql`…` fragments must be built with tx inside sql.begin");
+  }
+  return asCurrentUser(async (tx) => await tx(strings, ...values));
+}
+
+/** The signed-in user's view of the database: sql`…` or sql.begin(async (tx) => …). */
+export const sql = Object.assign(userQuery, { begin: asCurrentUser });
+
+/** Bypasses per-user isolation. Only for the export handlers, which set their own role. */
+export const unscopedSql = base;

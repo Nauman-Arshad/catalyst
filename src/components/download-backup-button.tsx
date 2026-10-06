@@ -3,14 +3,7 @@
 import { useState } from "react";
 import { Download } from "lucide-react";
 
-// "mine": the signed-in user's own rows. "all": every user's rows (administrators).
-const modes = {
-  mine: { url: "/api/my-data", file: "my-data", label: "Download My Data", busy: "Preparing your data…", status: "Preparing all of your records. Please keep this page open." },
-  all: { url: "/api/backup/download", file: "catalyst-backup", label: "Download Complete Backup", busy: "Preparing your backup…", status: "Preparing all application records. Please keep this page open." },
-};
-
-export function DownloadBackupButton({ scope = "all" }: { scope?: keyof typeof modes }) {
-  const mode = modes[scope];
+export function DownloadBackupButton() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
@@ -20,7 +13,7 @@ export function DownloadBackupButton({ scope = "all" }: { scope?: keyof typeof m
     setMessage("");
     setError("");
     try {
-      const response = await fetch(mode.url, { cache: "no-store" });
+      const response = await fetch("/api/backup/download", { cache: "no-store" });
       // A signed-out session gets Clerk's HTML page (404), never JSON.
       if (!response.headers.get("content-type")?.includes("application/json")) {
         throw new Error("Your session has expired. Please sign in again to download your backup.");
@@ -34,7 +27,7 @@ export function DownloadBackupButton({ scope = "all" }: { scope?: keyof typeof m
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
-      link.download = `${mode.file}-${new Date().toISOString().slice(0, 10)}.json`;
+      link.download = `catalyst-backup-${new Date().toISOString().slice(0, 10)}.json`;
       document.body.appendChild(link);
       link.click();
       link.remove();
@@ -51,9 +44,9 @@ export function DownloadBackupButton({ scope = "all" }: { scope?: keyof typeof m
   return <div>
     <button type="button" onClick={download} disabled={busy}
       className="inline-flex items-center gap-2 rounded-lg bg-purple-600 px-4 py-2 text-sm font-medium text-white hover:bg-purple-700 disabled:opacity-50">
-      <Download className="size-4" />{busy ? mode.busy : mode.label}
+      <Download className="size-4" />{busy ? "Preparing your backup…" : "Download Complete Backup"}
     </button>
-    {busy && <p role="status" className="mt-3 text-sm text-gray-600">{mode.status}</p>}
+    {busy && <p role="status" className="mt-3 text-sm text-gray-600">Preparing all application records. Please keep this page open.</p>}
     {message && <p role="status" className="mt-3 text-sm text-green-700">{message}</p>}
     {error && <p role="alert" className="mt-3 text-sm text-red-700">{error}</p>}
   </div>;
