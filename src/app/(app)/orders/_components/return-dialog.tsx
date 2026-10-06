@@ -287,9 +287,7 @@ export function ReturnButton({
               <ReturnSummary
                 returnAmount={returnAmount}
                 newTotal={newTotal}
-                paidAfter={paidAfter}
                 remainingAfter={remainingAfter}
-                refundNow={refundNow}
               />
 
               {refundDue > 0 ? (
@@ -359,9 +357,7 @@ export function ReturnButton({
               <ReturnSummary
                 returnAmount={returnAmount}
                 newTotal={newTotal}
-                paidAfter={paidAfter}
                 remainingAfter={remainingAfter}
-                refundNow={refundNow}
               />
 
               <p className="text-xs text-muted-foreground">

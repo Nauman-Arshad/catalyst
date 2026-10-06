@@ -3,15 +3,11 @@ import { formatCurrency } from "@/lib/utils";
 export function ReturnSummary({
   returnAmount,
   newTotal,
-  paidAfter,
   remainingAfter,
-  refundNow,
 }: {
   returnAmount: number;
   newTotal: number;
-  paidAfter: number;
   remainingAfter: number;
-  refundNow: number;
 }) {
   return (
     <div className="space-y-2 rounded-lg bg-muted/50 p-3 text-sm">

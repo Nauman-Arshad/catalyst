@@ -21,9 +21,8 @@ export const exportTables = {
   company_payments: ["id", "payment_date", "amount", "payment_method", "note", "created_at", "user_id"],
 } as const;
 
-const csvColumns = ["table", "export_version", "exported_at", ...new Set(Object.values(exportTables).flat()), "email"];
 const historyColumns = ["tbl", "key", "old_user_id"] as const;
-const fullCsvColumns = [...csvColumns, ...historyColumns];
+const csvColumns = ["table", "export_version", "exported_at", ...new Set(Object.values(exportTables).flat()), "email", ...historyColumns];
 
 export function csvCell(value: unknown): string {
   let text = value == null ? "" : String(value);
@@ -32,9 +31,9 @@ export function csvCell(value: unknown): string {
   return '"' + text.replaceAll('"', '""') + '"';
 }
 
-function csvRow(table: string, row: Record<string, unknown>, exportedAt: string, columns = csvColumns): string {
+function csvRow(table: string, row: Record<string, unknown>, exportedAt: string): string {
   const values: Record<string, unknown> = { ...row, table, export_version: "1.0", exported_at: exportedAt };
-  return columns.map((column) => csvCell(values[column])).join(",") + "\r\n";
+  return csvColumns.map((column) => csvCell(values[column])).join(",") + "\r\n";
 }
 
 type Identity = { id: string; email: string | null; name: string | null };
@@ -51,11 +50,11 @@ const privateHeaders = {
   "X-Content-Type-Options": "nosniff",
 };
 
-export function createDataExportHandler({ sql, authenticate, scope = "user", authorizeFullExport = () => false, reportFailure = (diagnostic) => console.error("Data export failed", diagnostic) }: {
+/** Every user's rows, for backup administrators only. */
+export function createDataExportHandler({ sql, authenticate, authorizeFullExport = () => false, reportFailure = (diagnostic) => console.error("Data export failed", diagnostic) }: {
   sql: ReturnType<typeof postgres>;
   authenticate: () => Promise<Identity | null>;
   reportFailure?: (diagnostic: FailureDiagnostic) => void;
-  scope?: "user" | "all";
   authorizeFullExport?: (userId: string) => boolean;
 }) {
   return async function GET(request: Request): Promise<Response> {
@@ -72,12 +71,10 @@ export function createDataExportHandler({ sql, authenticate, scope = "user", aut
       Response.json({ error: message }, { status, headers: privateHeaders });
 
     try {
-      // No request-supplied identity is ever read, even when query parameters
-      // or a body are sent. Clerk is the only identity source.
+      // Clerk is the only identity source; request parameters are never read for it.
       const user = await authenticate();
       if (!user) return error("Please sign in to download your data.", 401);
-      // Full exports use a separate server-configured route, never a query flag.
-      if (scope === "all" && !authorizeFullExport(user.id)) {
+      if (!authorizeFullExport(user.id)) {
         return error("You are not authorized to export all application data.", 403);
       }
       if (request.headers.get("sec-fetch-site") === "cross-site") {
@@ -86,10 +83,7 @@ export function createDataExportHandler({ sql, authenticate, scope = "user", aut
 
       const exportedAt = new Date().toISOString();
       const format = new URL(request.url).searchParams.get("format") === "csv" ? "csv" : "json";
-      const columnsForCsv = scope === "all" ? fullCsvColumns : csvColumns;
-      const tables: Record<string, readonly string[]> = scope === "all"
-        ? { ...exportTables, _user_reassign_backup_20260926: historyColumns }
-        : exportTables;
+      const tables: Record<string, readonly string[]> = { ...exportTables, _user_reassign_backup_20260926: historyColumns };
       stage = "storage";
       directory = await mkdtemp(join(tmpdir(), "catalyst-export-"));
       file = await open(join(directory, `data.${format}`), "wx+", 0o600);
@@ -110,50 +104,46 @@ export function createDataExportHandler({ sql, authenticate, scope = "user", aut
       stage = "database";
       await sql.begin("isolation level repeatable read read only", async (tx) => {
         stage = "role";
-        if (scope === "user") await tx`set local role catalyst_app`;
         await tx`set local row_security = on`;
+        await tx`set local search_path = public`;
         await tx`set local statement_timeout = '30s'`;
         await tx`set local idle_in_transaction_session_timeout = '30s'`;
-        if (scope === "user") await tx`select set_config('app.current_user_id', ${user.id}, true)`;
         const [role] = await tx`select rolbypassrls, rolsuper from pg_roles where rolname = current_user`;
-        if (!role || (scope === "user" && (role.rolbypassrls || role.rolsuper))) throw new Error("Unsafe export role");
+        if (!role) throw new Error("Unsafe export role");
         stage = "tables";
+        // Deployed databases differ (older ones have no user_id columns, no
+        // row-level security, or no history table), so take each table's real
+        // columns and list missing tables in unavailable_tables.
         const unavailableTables: string[] = [];
-        if (scope === "all") {
-          // Deployed databases differ (older ones have no user_id columns, no
-          // row-level security, or no history table), so a full export takes
-          // each table's real columns and skips tables that don't exist,
-          // listing them in unavailable_tables instead of failing.
-          const present = new Map((await tx`
-            select c.relname as name, c.relrowsecurity as rls,
-                   array_agg(a.attname::text order by a.attnum) as columns
-            from pg_class c
-            join pg_attribute a on a.attrelid = c.oid and a.attnum > 0 and not a.attisdropped
-            where c.relnamespace = 'public'::regnamespace and c.relkind = 'r'
-              and c.relname in ${tx(Object.keys(tables))}
-            group by c.relname, c.relrowsecurity
-          `).map((row) => [row.name as string, row as unknown as { rls: boolean; columns: string[] }]));
-          for (const table of Object.keys(tables)) {
-            const found = present.get(table);
-            if (!found) {
-              delete tables[table];
-              unavailableTables.push(table);
-              continue;
-            }
-            // Never export a credential-like column a database might have gained.
-            tables[table] = found.columns.filter((column) => !/password|token|secret|api_key/i.test(column));
-            // A role subject to row-level security would silently miss rows.
-            if (found.rls && !role.rolbypassrls && !role.rolsuper) throw new Error("Unsafe export role");
+        const present = new Map((await tx`
+          select c.relname as name, c.relrowsecurity as rls,
+                 array_agg(a.attname::text order by a.attnum) as columns
+          from pg_class c
+          join pg_attribute a on a.attrelid = c.oid and a.attnum > 0 and not a.attisdropped
+          where c.relnamespace = 'public'::regnamespace and c.relkind = 'r'
+            and c.relname in ${tx(Object.keys(tables))}
+          group by c.relname, c.relrowsecurity
+        `).map((row) => [row.name as string, row as unknown as { rls: boolean; columns: string[] }]));
+        for (const table of Object.keys(tables)) {
+          const found = present.get(table);
+          if (!found) {
+            delete tables[table];
+            unavailableTables.push(table);
+            continue;
           }
+          // Never export a credential-like column a database might have gained.
+          tables[table] = found.columns.filter((column) => !/password|token|secret|api_key/i.test(column));
+          // A role subject to row-level security would silently miss rows.
+          if (found.rls && !role.rolbypassrls && !role.rolsuper) throw new Error("Unsafe export role");
         }
 
         if (format === "csv") {
-          // A single rectangular CSV containing a source-table column. Include
-          // the same minimal Clerk profile as JSON, even for an empty account.
-          await write("\uFEFF" + columnsForCsv.map(csvCell).join(",") + "\r\n");
-          await write(csvRow("user", { ...user, user_id: user.id }, exportedAt, columnsForCsv));
+          // One rectangular CSV with a source-table column, led by the same
+          // minimal Clerk profile as the JSON.
+          await write("\uFEFF" + csvColumns.map(csvCell).join(",") + "\r\n");
+          await write(csvRow("user", { ...user, user_id: user.id }, exportedAt));
         } else {
-          await write(JSON.stringify({ export_version: "1.0", exported_at: exportedAt, user, ...(scope === "all" ? { export_scope: "all_application_data", unavailable_tables: unavailableTables } : {}) }).slice(0, -1) + ',"data":{');
+          await write(JSON.stringify({ export_version: "1.0", exported_at: exportedAt, user, export_scope: "all_application_data", unavailable_tables: unavailableTables }).slice(0, -1) + ',"data":{');
         }
         let firstTable = true;
         // Written after the data, so a file can be checked on its own and
@@ -166,18 +156,12 @@ export function createDataExportHandler({ sql, authenticate, scope = "user", aut
           let rowCount = 0;
           const preferredKey = table === "_user_reassign_backup_20260926" ? "key" : table === "company_ledger_days" ? "ledger_date" : table === "company_ledger_order_paid" ? "order_id" : "id";
           const key = columns.includes(preferredKey) ? preferredKey : columns[0];
-          // All live child tables have user_id; composite foreign keys enforce
-          // the same owner on both sides. Export them independently so every
-          // child is included without joins duplicating or omitting rows.
-          // The callback cursor API does not await its final batch callback.
-          // Iteration awaits every write before advancing or closing the file.
-          const query = scope === "all"
-            ? tx`select ${tx([...columns])} from public.${tx(table)} order by ${tx(key)}`
-            : tx`select ${tx([...columns])} from public.${tx(table)} where user_id = ${user.id} order by ${tx(key)}`;
+          // Iterate rather than use the callback cursor API, which does not
+          // await its final batch: every write lands before the file closes.
+          const query = tx`select ${tx([...columns])} from public.${tx(table)} order by ${tx(key)}`;
           for await (const rows of query.cursor(500)) {
             for (const row of rows) {
-              if (scope === "user" && row.user_id !== user.id) throw new Error("Ownership mismatch");
-              await write(format === "csv" ? csvRow(table, row, exportedAt, columnsForCsv) : (firstRow ? "" : ",") + JSON.stringify(row));
+              await write(format === "csv" ? csvRow(table, row, exportedAt) : (firstRow ? "" : ",") + JSON.stringify(row));
               firstRow = false;
               rowCount++;
             }
@@ -215,7 +199,7 @@ export function createDataExportHandler({ sql, authenticate, scope = "user", aut
           ...privateHeaders,
           "Content-Type": format === "csv" ? "text/csv; charset=utf-8" : "application/json; charset=utf-8",
           "Content-Length": String(size),
-          "Content-Disposition": `attachment; filename="${scope === "all" ? "all-application-data" : "my-data"}-${exportedAt.slice(0, 10)}.${format}"`,
+          "Content-Disposition": `attachment; filename="all-application-data-${exportedAt.slice(0, 10)}.${format}"`,
         },
       });
     } catch (cause) {
@@ -224,9 +208,8 @@ export function createDataExportHandler({ sql, authenticate, scope = "user", aut
       // Only fixed stage names and allowlisted codes leave the exception path.
       const code = safeErrorCode(cause);
       try { reportFailure({ reference, stage, code }); } catch { /* Diagnostics must not break the safe error response. */ }
-      // Database/Clerk errors can contain credentials or SQL: never return them.
-      // The fixed stage name and allowlisted error code are safe to show, so a
-      // failure can be diagnosed from the screen without server logs.
+      // Database/Clerk errors can contain credentials or SQL: return only the
+      // fixed stage name and allowlisted code, which are safe to show.
       return Response.json({
         error: "Unable to prepare your data. Please try again. If this continues, contact support.",
         reference,

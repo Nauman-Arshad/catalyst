@@ -1,5 +1,5 @@
 import { auth, currentUser } from "@clerk/nextjs/server";
-import { sql } from "@/lib/db";
+import { unscopedSql } from "@/lib/db";
 import { createDataExportHandler } from "@/lib/data-export";
 import { isDataExportAdmin } from "@/lib/export-admin";
 
@@ -10,8 +10,7 @@ export const maxDuration = 300;
 export async function GET(request: Request) {
   let authorizedUserId: string | null = null;
   return createDataExportHandler({
-  sql,
-  scope: "all",
+  sql: unscopedSql,
   authorizeFullExport: id => id === authorizedUserId,
   async authenticate() {
     const { userId } = await auth();

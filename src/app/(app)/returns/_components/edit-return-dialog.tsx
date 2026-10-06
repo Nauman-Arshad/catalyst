@@ -255,9 +255,7 @@ export function EditReturnButton({ record }: { record: ReturnRecord }) {
             <ReturnSummary
               returnAmount={returnAmount}
               newTotal={newTotal}
-              paidAfter={paidAfter}
               remainingAfter={remainingAfter}
-              refundNow={refundNow}
             />
 
             {refundDue > 0 ? (
