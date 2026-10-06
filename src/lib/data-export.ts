@@ -116,16 +116,34 @@ export function createDataExportHandler({ sql, authenticate, scope = "user", aut
         await tx`set local idle_in_transaction_session_timeout = '30s'`;
         if (scope === "user") await tx`select set_config('app.current_user_id', ${user.id}, true)`;
         const [role] = await tx`select rolbypassrls, rolsuper from pg_roles where rolname = current_user`;
-        if (!role || (scope === "user" ? role.rolbypassrls || role.rolsuper : !role.rolbypassrls && !role.rolsuper)) throw new Error("Unsafe export role");
+        if (!role || (scope === "user" && (role.rolbypassrls || role.rolsuper))) throw new Error("Unsafe export role");
         stage = "tables";
-        // Older deployed databases may never have had the ownership-history
-        // table. Do not create it or fail the application backup on its absence.
         const unavailableTables: string[] = [];
         if (scope === "all") {
-          const [history] = await tx`select to_regclass('public._user_reassign_backup_20260926')::text as history_table`;
-          if (history?.history_table === null) {
-            delete tables._user_reassign_backup_20260926;
-            unavailableTables.push("_user_reassign_backup_20260926");
+          // Deployed databases differ (older ones have no user_id columns, no
+          // row-level security, or no history table), so a full export takes
+          // each table's real columns and skips tables that don't exist,
+          // listing them in unavailable_tables instead of failing.
+          const present = new Map((await tx`
+            select c.relname as name, c.relrowsecurity as rls,
+                   array_agg(a.attname::text order by a.attnum) as columns
+            from pg_class c
+            join pg_attribute a on a.attrelid = c.oid and a.attnum > 0 and not a.attisdropped
+            where c.relnamespace = 'public'::regnamespace and c.relkind = 'r'
+              and c.relname in ${tx(Object.keys(tables))}
+            group by c.relname, c.relrowsecurity
+          `).map((row) => [row.name as string, row as unknown as { rls: boolean; columns: string[] }]));
+          for (const table of Object.keys(tables)) {
+            const found = present.get(table);
+            if (!found) {
+              delete tables[table];
+              unavailableTables.push(table);
+              continue;
+            }
+            // Never export a credential-like column a database might have gained.
+            tables[table] = found.columns.filter((column) => !/password|token|secret|api_key/i.test(column));
+            // A role subject to row-level security would silently miss rows.
+            if (found.rls && !role.rolbypassrls && !role.rolsuper) throw new Error("Unsafe export role");
           }
         }
 
@@ -146,7 +164,8 @@ export function createDataExportHandler({ sql, authenticate, scope = "user", aut
           firstTable = false;
           let firstRow = true;
           let rowCount = 0;
-          const key = table === "_user_reassign_backup_20260926" ? "key" : table === "company_ledger_days" ? "ledger_date" : table === "company_ledger_order_paid" ? "order_id" : "id";
+          const preferredKey = table === "_user_reassign_backup_20260926" ? "key" : table === "company_ledger_days" ? "ledger_date" : table === "company_ledger_order_paid" ? "order_id" : "id";
+          const key = columns.includes(preferredKey) ? preferredKey : columns[0];
           // All live child tables have user_id; composite foreign keys enforce
           // the same owner on both sides. Export them independently so every
           // child is included without joins duplicating or omitting rows.

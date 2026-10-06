@@ -66,7 +66,7 @@ test("export manifest excludes backup tables and secret columns", () => {
   }
 });
 
-function fixtureDatabase({ leak = false, unsafeRole = false, adminRole = false } = {}) {
+function fixtureDatabase({ leak = false, unsafeRole = false, adminRole = false, omitTables, dropColumns } = {}) {
   const fixtures = Object.fromEntries(Object.entries(exportTables).map(([table, columns]) => [table,
     ["user_a", "user_b"].flatMap((owner) => Array.from({ length: table === "parties" ? 1001 : 2 }, (_, index) => ({
       ...Object.fromEntries(columns.map((column) => [column, column === "id" ? index + 1 : null])),
@@ -87,6 +87,12 @@ function fixtureDatabase({ leak = false, unsafeRole = false, adminRole = false }
         if (query.includes("set local role catalyst_app")) roleSet = true;
         if (query.includes("set_config")) currentId = values[0];
         if (query.includes("from pg_roles")) return Promise.resolve([{ rolbypassrls: unsafeRole || adminRole, rolsuper: false }]);
+        if (query.includes("from pg_class")) {
+          const wanted = values[0].identifier;
+          return Promise.resolve(wanted.filter((name) => (omitTables ?? []).includes(name) === false && fixtures[name]).map((name) => ({
+            name, rls: true, columns: name === "_user_reassign_backup_20260926" ? ["tbl", "key", "old_user_id"] : [...exportTables[name]].filter((c) => !(dropColumns ?? []).includes(c)),
+          })));
+        }
         if (query.includes("from public.")) {
           const [columns, table, requestedId] = values;
           const scoped = query.includes("where user_id");
@@ -156,6 +162,22 @@ test("authorized admin exports both owners, all batches and unchanged ownership 
       assert.equal(parsed.data.filter((row) => row.table === "_user_reassign_backup_20260926").length, 1);
     }
   }
+});
+
+test("full exports adapt to databases without some tables or columns", async () => {
+  const response = await createDataExportHandler({
+    sql: fixtureDatabase({ adminRole: true, omitTables: ["company_payments", "_user_reassign_backup_20260926"], dropColumns: ["user_id"] }).sql,
+    authenticate: async () => identity("any-user"),
+    scope: "all",
+    authorizeFullExport: () => true,
+  })(request());
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.deepEqual(body.unavailable_tables.sort(), ["_user_reassign_backup_20260926", "company_payments"]);
+  assert.equal(body.data.company_payments, undefined);
+  assert.equal(body.data.parties.length, 2002);
+  assert.ok(body.data.parties.every((row) => !("user_id" in row)));
+  assert.deepEqual(body.tables.parties.columns, exportTables.parties.filter((c) => c !== "user_id"));
 });
 
 test("request flags cannot broaden My Data scope; full exports fail if database cannot read all owners", async () => {
