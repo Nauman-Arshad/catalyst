@@ -26,14 +26,18 @@ export async function createOrder(values: unknown): Promise<ActionResult> {
         values (${generateOrderNumber()}, ${o.party_id}, ${o.order_date}, ${o.status}, ${o.advance_payment})
         returning id
       `;
-      for (const it of o.items) {
-        // Snapshot the product's company rate for the company ledger.
-        await tx`
-          insert into order_items (order_id, product_id, quantity, unit_price, company_rate)
-          values (${order.id}, ${it.product_id}, ${it.quantity}, ${it.unit_price},
-                  (select company_rate from products where id = ${it.product_id}))
-        `;
-      }
+      // All lines in one statement (in form order), snapshotting each
+      // product's company rate for the company ledger.
+      await tx`
+        insert into order_items (order_id, product_id, quantity, unit_price, company_rate)
+        select ${order.id}, x.product_id, x.quantity, x.unit_price,
+               (select company_rate from products where id = x.product_id)
+        from unnest(${o.items.map((it) => it.product_id)}::bigint[],
+                    ${o.items.map((it) => it.quantity)}::numeric[],
+                    ${o.items.map((it) => it.unit_price)}::numeric[])
+             with ordinality as x(product_id, quantity, unit_price, ord)
+        order by x.ord
+      `;
       // Record the advance as a payment so it flows into the party ledger and
       // the order's paid total (single source of truth = the payments table).
       if (o.advance_payment > 0) {
@@ -83,14 +87,18 @@ export async function updateOrder(
         oldRates.map((r) => [Number(r.product_id), Number(r.company_rate)]),
       );
       await tx`delete from order_items where order_id = ${id}`;
-      for (const it of o.items) {
-        const kept = rateByProduct.get(it.product_id) ?? null;
-        await tx`
-          insert into order_items (order_id, product_id, quantity, unit_price, company_rate)
-          values (${id}, ${it.product_id}, ${it.quantity}, ${it.unit_price},
-                  coalesce(${kept}::numeric, (select company_rate from products where id = ${it.product_id})))
-        `;
-      }
+      // All lines in one statement, in form order.
+      await tx`
+        insert into order_items (order_id, product_id, quantity, unit_price, company_rate)
+        select ${id}, x.product_id, x.quantity, x.unit_price,
+               coalesce(x.kept, (select company_rate from products where id = x.product_id))
+        from unnest(${o.items.map((it) => it.product_id)}::bigint[],
+                    ${o.items.map((it) => it.quantity)}::numeric[],
+                    ${o.items.map((it) => it.unit_price)}::numeric[],
+                    ${o.items.map((it) => rateByProduct.get(it.product_id) ?? null)}::numeric[])
+             with ordinality as x(product_id, quantity, unit_price, kept, ord)
+        order by x.ord
+      `;
     });
     revalidatePath("/orders");
     revalidatePath(`/orders/${id}`);

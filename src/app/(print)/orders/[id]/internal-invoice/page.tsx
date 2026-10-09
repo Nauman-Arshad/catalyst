@@ -24,12 +24,10 @@ export default async function InternalInvoicePage({
   const { id: idStr } = await params;
   const id = Number(idStr);
 
-  const orderRows = (await sql`select * from orders where id = ${id}`) as unknown as Order[];
-  const order = orderRows[0];
-  if (!order) notFound();
-
-  const [partyRows, items, payRows] = await Promise.all([
-    sql`select * from parties where id = ${order.party_id}` as unknown as Promise<
+  // One parallel batch; the party is found through the order.
+  const [orderRows, partyRows, items, payRows] = await Promise.all([
+    sql`select * from orders where id = ${id}` as unknown as Promise<Order[]>,
+    sql`select * from parties where id = (select party_id from orders where id = ${id})` as unknown as Promise<
       Party[]
     >,
     sql`
@@ -39,6 +37,8 @@ export default async function InternalInvoicePage({
     ` as unknown as Promise<ItemRow[]>,
     sql`select coalesce(sum(amount), 0) as paid from payments where order_id = ${id}`,
   ]);
+  const order = orderRows[0];
+  if (!order) notFound();
 
   const party = partyRows[0];
   const orderTotal = items.reduce(

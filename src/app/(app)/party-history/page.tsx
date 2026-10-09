@@ -1,3 +1,4 @@
+import { cache } from "react";
 import Link from "next/link";
 import { History, Users } from "lucide-react";
 import { sql } from "@/lib/db";
@@ -38,8 +39,7 @@ export async function generateMetadata({
   const { party } = await searchParams;
   const id = Number(party);
   if (!Number.isInteger(id) || id <= 0) return { title: "Party History" };
-  const rows = await sql`select name from parties where id = ${id}`;
-  const name = rows[0]?.name as string | undefined;
+  const name = (await getParty(id))?.name;
   return { title: name ? `${name} — Party History` : "Party History" };
 }
 
@@ -69,6 +69,42 @@ type PaymentRow = {
   order_number: string | null;
 };
 
+// Shared by generateMetadata and the page, so the party is read once per request.
+const getParty = cache(
+  async (id: number) =>
+    ((await sql`select * from parties where id = ${id}`) as unknown as Party[])[0],
+);
+
+function loadHistory(partyId: number) {
+  return Promise.all([
+    getParty(partyId),
+    sql`select o.id, o.order_number, o.order_date, o.status, o.advance_payment,
+          coalesce((select sum(quantity * unit_price) from order_items where order_id = o.id), 0) as total,
+          coalesce((select sum(amount) from payments where order_id = o.id), 0) as paid,
+          coalesce((
+            select json_agg(json_build_object(
+                     'id', oi.id, 'product_id', oi.product_id, 'product_name', pr.name,
+                     'quantity', oi.quantity, 'unit_price', oi.unit_price
+                   ) order by oi.id)
+            from order_items oi join products pr on pr.id = oi.product_id
+            where oi.order_id = o.id
+          ), '[]'::json) as items
+        from orders o
+        where o.party_id = ${partyId}
+        order by o.order_date desc, o.created_at desc` as unknown as Promise<
+      OrderRow[]
+    >,
+    sql`select pay.id, pay.amount, pay.payment_date, pay.payment_method,
+               pay.order_id, o.order_number
+        from payments pay
+        left join orders o on o.id = pay.order_id
+        where pay.party_id = ${partyId}
+        order by pay.payment_date desc, pay.created_at desc` as unknown as Promise<
+      PaymentRow[]
+    >,
+  ]);
+}
+
 export default async function PartyHistoryPage({
   searchParams,
 }: {
@@ -78,9 +114,13 @@ export default async function PartyHistoryPage({
   const partyId = Number(partyParam);
   const hasParty = Number.isInteger(partyId) && partyId > 0;
 
-  const parties = (await sql`
-    select id, name, phone from parties order by lower(name)
-  `) as unknown as PartyOption[];
+  // The picker's list and the selected party's history load together.
+  const [parties, history] = await Promise.all([
+    sql`select id, name, phone from parties order by lower(name)` as unknown as Promise<
+      PartyOption[]
+    >,
+    hasParty ? loadHistory(partyId) : null,
+  ]);
 
   const header = (
     <PageHeader
@@ -109,37 +149,8 @@ export default async function PartyHistoryPage({
     );
   }
 
-  const [partyRows, orders, payments] = await Promise.all([
-    sql`select * from parties where id = ${partyId}` as unknown as Promise<
-      Party[]
-    >,
-    sql`select o.id, o.order_number, o.order_date, o.status, o.advance_payment,
-          coalesce((select sum(quantity * unit_price) from order_items where order_id = o.id), 0) as total,
-          coalesce((select sum(amount) from payments where order_id = o.id), 0) as paid,
-          coalesce((
-            select json_agg(json_build_object(
-                     'id', oi.id, 'product_id', oi.product_id, 'product_name', pr.name,
-                     'quantity', oi.quantity, 'unit_price', oi.unit_price
-                   ) order by oi.id)
-            from order_items oi join products pr on pr.id = oi.product_id
-            where oi.order_id = o.id
-          ), '[]'::json) as items
-        from orders o
-        where o.party_id = ${partyId}
-        order by o.order_date desc, o.created_at desc` as unknown as Promise<
-      OrderRow[]
-    >,
-    sql`select pay.id, pay.amount, pay.payment_date, pay.payment_method,
-               pay.order_id, o.order_number
-        from payments pay
-        left join orders o on o.id = pay.order_id
-        where pay.party_id = ${partyId}
-        order by pay.payment_date desc, pay.created_at desc` as unknown as Promise<
-      PaymentRow[]
-    >,
-  ]);
+  const [party, orders, payments] = history!;
 
-  const party = partyRows[0];
   if (!party) {
     return (
       <div className="space-y-6">

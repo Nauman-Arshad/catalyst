@@ -15,11 +15,8 @@ export default async function EditOrderPage({
   const { id: idStr } = await params;
   const id = Number(idStr);
 
-  const orderRows = (await sql`select * from orders where id = ${id}`) as unknown as Order[];
-  const order = orderRows[0];
-  if (!order) notFound();
-
-  const [items, parties, products] = await Promise.all([
+  const [orderRows, items, parties, products] = await Promise.all([
+    sql`select * from orders where id = ${id}` as unknown as Promise<Order[]>,
     sql`select * from order_items where order_id = ${id} order by id` as unknown as Promise<
       OrderItem[]
     >,
@@ -29,6 +26,8 @@ export default async function EditOrderPage({
            or id in (select product_id from order_items where order_id = ${id})
         order by name asc`,
   ]);
+  const order = orderRows[0];
+  if (!order) notFound();
 
   return (
     <div className="space-y-6">

@@ -26,15 +26,19 @@ export async function GET(request: Request) {
     to: params.get("to") ?? undefined,
   });
   // Oldest first, like a statement.
+  const [ledger, companyPayments] = await Promise.all([
+    loadCompanyLedger(),
+    loadCompanyPayments(),
+  ]);
   const days = filterLedgerByDate(
-    filterLedgerByParty(await loadCompanyLedger(), term),
+    filterLedgerByParty(ledger, term),
     from,
     to,
   ).reverse();
   // Money paid straight to the company. Like the page, these follow the date
   // window only: a company-name search narrows the days, not what was paid.
   const payments = filterCompanyPaymentsByDate(
-    await loadCompanyPayments(),
+    companyPayments,
     from,
     to,
   );

@@ -68,8 +68,12 @@ export default async function CompanyLedgerPage({
   // Search keeps the days a matching party ordered on, with that party's
   // orders highlighted; the money columns stay the day's real totals. The
   // date range then narrows those days to the selected period.
+  const [ledger, companyPayments] = await Promise.all([
+    loadCompanyLedger(),
+    loadCompanyPayments(),
+  ]);
   const days = filterLedgerByDate(
-    filterLedgerByParty(await loadCompanyLedger(), term),
+    filterLedgerByParty(ledger, term),
     from,
     to,
   );
@@ -78,7 +82,7 @@ export default async function CompanyLedgerPage({
   // is money paid, so its total goes into Total Paid and comes off Total
   // Pending and the Company Balance.
   const directPayments = filterCompanyPaymentsByDate(
-    await loadCompanyPayments(),
+    companyPayments,
     from,
     to,
   );

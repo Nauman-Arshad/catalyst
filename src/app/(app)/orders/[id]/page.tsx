@@ -1,3 +1,4 @@
+import { cache } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft, Pencil, FileText, Undo2 } from "lucide-react";
@@ -31,14 +32,20 @@ import { deleteOrder } from "../actions";
 
 export const dynamic = "force-dynamic";
 
+// Shared by generateMetadata and the page, so the order is read once per request.
+const getOrder = cache(
+  async (id: number) =>
+    ((await sql`select * from orders where id = ${id}`) as unknown as Order[])[0],
+);
+
 export async function generateMetadata({
   params,
 }: {
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const rows = await sql`select order_number from orders where id = ${Number(id)}`;
-  return { title: (rows[0]?.order_number as string) ?? "Order" };
+  const order = await getOrder(Number(id));
+  return { title: order?.order_number ?? "Order" };
 }
 
 type ItemRow = {
@@ -57,12 +64,10 @@ export default async function OrderDetailPage({
   const { id: idStr } = await params;
   const id = Number(idStr);
 
-  const orderRows = (await sql`select * from orders where id = ${id}`) as unknown as Order[];
-  const order = orderRows[0];
-  if (!order) notFound();
-
-  const [partyRows, items, payRows, returns] = await Promise.all([
-    sql`select * from parties where id = ${order.party_id}` as unknown as Promise<
+  // Everything in one parallel batch; the party is found through the order.
+  const [order, partyRows, items, payRows, returns] = await Promise.all([
+    getOrder(id),
+    sql`select * from parties where id = (select party_id from orders where id = ${id})` as unknown as Promise<
       Party[]
     >,
     sql`
@@ -73,6 +78,7 @@ export default async function OrderDetailPage({
     sql`select coalesce(sum(amount), 0) as paid from payments where order_id = ${id}`,
     loadReturns(id),
   ]);
+  if (!order) notFound();
 
   const party = partyRows[0];
   const orderTotal = items.reduce(

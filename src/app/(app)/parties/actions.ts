@@ -87,8 +87,14 @@ export async function importParties(rows: unknown): Promise<ImportResult> {
   await auth.protect();
   if (!Array.isArray(rows)) return { ok: false, error: "Invalid CSV payload" };
 
-  let inserted = 0;
   let skipped = 0;
+  const parties: {
+    name: string;
+    phone: string | null;
+    address: string | null;
+    opening_balance: number;
+    status: "active" | "inactive";
+  }[] = [];
   for (const raw of rows) {
     const r = raw as Record<string, string>;
     const name = (r.name ?? "").trim();
@@ -96,17 +102,38 @@ export async function importParties(rows: unknown): Promise<ImportResult> {
       skipped++;
       continue;
     }
-    const status = r.status?.trim().toLowerCase() === "inactive" ? "inactive" : "active";
     const opening = Number(r.opening_balance);
-    try {
-      await sql`
-        insert into parties (name, phone, address, opening_balance, status)
-        values (${name}, ${r.phone?.trim() || null}, ${r.address?.trim() || null},
-                ${Number.isFinite(opening) ? opening : 0}, ${status})
-      `;
-      inserted++;
-    } catch {
-      skipped++;
+    parties.push({
+      name,
+      phone: r.phone?.trim() || null,
+      address: r.address?.trim() || null,
+      opening_balance: Number.isFinite(opening) ? opening : 0,
+      status: r.status?.trim().toLowerCase() === "inactive" ? "inactive" : "active",
+    });
+  }
+
+  let inserted = 0;
+  try {
+    // Every row in one statement. If any row is rejected nothing is written,
+    // and the rows are retried one by one so the good ones still go in.
+    if (parties.length > 0) {
+      await sql.begin(
+        (tx) =>
+          tx`insert into parties ${tx(parties, "name", "phone", "address", "opening_balance", "status")}`,
+      );
+    }
+    inserted = parties.length;
+  } catch {
+    for (const p of parties) {
+      try {
+        await sql`
+          insert into parties (name, phone, address, opening_balance, status)
+          values (${p.name}, ${p.phone}, ${p.address}, ${p.opening_balance}, ${p.status})
+        `;
+        inserted++;
+      } catch {
+        skipped++;
+      }
     }
   }
   revalidatePath("/parties");

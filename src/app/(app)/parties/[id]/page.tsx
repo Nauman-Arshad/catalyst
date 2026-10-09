@@ -1,3 +1,4 @@
+import { cache } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft, Pencil, History } from "lucide-react";
@@ -23,14 +24,20 @@ import { deleteParty } from "../actions";
 
 export const dynamic = "force-dynamic";
 
+// Shared by generateMetadata and the page, so the party is read once per request.
+const getParty = cache(
+  async (id: number) =>
+    ((await sql`select * from parties where id = ${id}`) as unknown as Party[])[0],
+);
+
 export async function generateMetadata({
   params,
 }: {
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const rows = await sql`select name from parties where id = ${Number(id)}`;
-  return { title: (rows[0]?.name as string) ?? "Party" };
+  const party = await getParty(Number(id));
+  return { title: party?.name ?? "Party" };
 }
 
 export default async function PartyDetailPage({
@@ -46,8 +53,8 @@ export default async function PartyDetailPage({
   const needle = term.toLowerCase();
 
   // Party, its orders (with computed totals), and payments — one parallel batch.
-  const [partyRows, orders, payments] = await Promise.all([
-    sql`select * from parties where id = ${id}` as unknown as Promise<Party[]>,
+  const [party, orders, payments] = await Promise.all([
+    getParty(id),
     sql`select o.id, o.order_number, o.order_date, o.created_at,
           coalesce((select sum(quantity * unit_price) from order_items where order_id = o.id), 0) as total,
           coalesce((select string_agg(lower(pr.name), ' | ')
@@ -75,7 +82,6 @@ export default async function PartyDetailPage({
     >,
   ]);
 
-  const party = partyRows[0];
   if (!party) notFound();
 
   const ordersTotal = orders.reduce((s, o) => s + Number(o.total), 0);
